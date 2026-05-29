@@ -1,0 +1,145 @@
+{
+  "meta": {
+    "repeats": 2,
+    "timestamp": "2026-04-22T12:00:53.639Z",
+    "machine": {
+      "os": "darwin",
+      "arch": "arm64",
+      "node": "v24.14.0"
+    }
+  },
+  "results": [
+    {
+      "label": "simple-short",
+      "runtime": "codex",
+      "samples": [
+        {
+          "first_token_ms": 6742,
+          "total_ms": 8179,
+          "events_count": 3,
+          "full_text_len": 9,
+          "exit_code": 0,
+          "timed_out": false
+        },
+        {
+          "first_token_ms": 9865,
+          "total_ms": 11472,
+          "events_count": 3,
+          "full_text_len": 9,
+          "exit_code": 0,
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "label": "with-context-4k",
+      "runtime": "codex",
+      "samples": [
+        {
+          "first_token_ms": 9493,
+          "total_ms": 10997,
+          "events_count": 3,
+          "full_text_len": 8,
+          "exit_code": 0,
+          "timed_out": false
+        },
+        {
+          "first_token_ms": 6735,
+          "total_ms": 8148,
+          "events_count": 3,
+          "full_text_len": 8,
+          "exit_code": 0,
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "label": "medium-reply",
+      "runtime": "codex",
+      "samples": [
+        {
+          "first_token_ms": 13271,
+          "total_ms": 14750,
+          "events_count": 3,
+          "full_text_len": 68,
+          "exit_code": 0,
+          "timed_out": false
+        },
+        {
+          "first_token_ms": 17853,
+          "total_ms": 19361,
+          "events_count": 3,
+          "full_text_len": 50,
+          "exit_code": 0,
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "label": "simple-short",
+      "runtime": "cursor",
+      "samples": [
+        {
+          "first_token_ms": 4478,
+          "total_ms": 4981,
+          "events_count": 9,
+          "full_text_len": 9,
+          "exit_code": 0,
+          "timed_out": false
+        },
+        {
+          "first_token_ms": 4653,
+          "total_ms": 5091,
+          "events_count": 7,
+          "full_text_len": 9,
+          "exit_code": 0,
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "label": "with-context-4k",
+      "runtime": "cursor",
+      "samples": [
+        {
+          "first_token_ms": 4642,
+          "total_ms": 15539,
+          "events_count": 172,
+          "full_text_len": 437,
+          "exit_code": 0,
+          "timed_out": false
+        },
+        {
+          "first_token_ms": 4716,
+          "total_ms": 12741,
+          "events_count": 122,
+          "full_text_len": 383,
+          "exit_code": 0,
+          "timed_out": false
+        }
+      ]
+    },
+    {
+      "label": "medium-reply",
+      "runtime": "cursor",
+      "samples": [
+        {
+          "first_token_ms": 4623,
+          "total_ms": 6768,
+          "events_count": 19,
+          "full_text_len": 67,
+          "exit_code": 0,
+          "timed_out": false
+        },
+        {
+          "first_token_ms": 4448,
+          "total_ms": 4930,
+          "events_count": 22,
+          "full_text_len": 65,
+          "exit_code": 0,
+          "timed_out": false
+        }
+      ]
+    }
+  ]
+}

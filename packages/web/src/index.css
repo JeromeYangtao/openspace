@@ -1,0 +1,74 @@
+@import 'tailwindcss';
+
+/*
+ * OpenSpace Design Tokens（对齐 docs/ui-reference/design-tokens.md）
+ * Tailwind CSS v4 使用 @theme 指令定义 token，自动生成 bg-*, text-*, border-* 工具类
+ */
+@theme {
+  /* 颜色：奶油主区 + 黄色侧边 + 粉色强调 + 黑色边框 */
+  --color-bg-main: #faf5e6;       /* 主内容区奶油色 */
+  --color-bg-sidebar: #fbda4d;    /* 侧边栏明亮黄（核心修正：不是奶油） */
+  --color-bg-card: #ffffff;
+  --color-bg-overlay: rgba(0, 0, 0, 0.5);
+
+  --color-text-primary: #000000;
+  --color-text-secondary: #7a7a7a;
+  --color-text-muted: #a8a8a8;
+
+  /* 强调色 */
+  --color-accent-pink: #ec5f92;
+  --color-accent-yellow: #fbda4d;
+  --color-accent-green: #4bd156;
+  --color-accent-orange: #ff9a4d;
+  --color-accent-red: #eb3a3a;
+  --color-accent-teal: #8ed1d8;
+  --color-accent-purple: #c6b3ff;
+  --color-accent-cyan: #b3e5e5;
+
+  /* 状态点 */
+  --color-status-online: #4bd156;
+  --color-status-thinking: #ff9a4d;
+  --color-status-working: #ff9a4d;
+  --color-status-offline: #6b6b6b;
+  --color-status-hibernating: #9a9a9a;
+  --color-status-error: #eb3a3a;
+
+  /* 字体 */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Noto Sans CJK SC', sans-serif;
+  --font-mono: 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}
+
+/* 全局基础样式 */
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg-main);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* section header 统一大写 + 等宽 + letter-spacing */
+.section-header {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* shiki 代码块容器 */
+.openspace-code-block pre {
+  margin: 0;
+  padding: 12px;
+  background-color: #f6f8fa !important;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.openspace-code-block code {
+  font-family: var(--font-mono);
+}

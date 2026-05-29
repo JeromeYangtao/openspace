@@ -1,0 +1,41 @@
+{
+  "name": "openspace",
+  "version": "0.0.1",
+  "private": true,
+  "description": "OpenSpace — Local AI Agent collaboration platform (slock.ai local clone)",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently -n server,web -c yellow,cyan \"pnpm dev:server\" \"pnpm dev:web\"",
+    "dev:server": "pnpm --filter @openspace/server dev",
+    "dev:web": "pnpm --filter @openspace/web dev",
+    "start": "pnpm --filter @openspace/server start",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:restart": "pm2 restart openspace",
+    "pm2:stop": "pm2 stop openspace",
+    "pm2:logs": "pm2 logs openspace",
+    "deploy": "pnpm build && (pm2 restart openspace || pm2 start ecosystem.config.cjs)",
+    "build": "pnpm -r build",
+    "build:server": "pnpm --filter @openspace/server build",
+    "build:web": "pnpm --filter @openspace/web build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint 'packages/*/src/**/*.{ts,tsx}'",
+    "format": "prettier --write \"packages/*/src/**/*.{ts,tsx,css,json,md}\"",
+    "format:check": "prettier --check \"packages/*/src/**/*.{ts,tsx,css,json,md}\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.17.0",
+    "@typescript-eslint/parser": "^8.18.2",
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.2"
+  }
+}

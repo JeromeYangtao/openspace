@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenSpace 开源准备说明</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #15120f;
+        --muted: #5d564c;
+        --paper: #fff8e8;
+        --panel: #fffdf6;
+        --accent: #ffcc4d;
+        --accent-strong: #ff7a90;
+        --line: #15120f;
+        --green: #d8f6d1;
+        --blue: #d9efff;
+        --shadow: 6px 6px 0 #15120f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.65;
+      }
+
+      main {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 40px 0 64px;
+      }
+
+      header {
+        border: 2px solid var(--line);
+        background: var(--accent);
+        box-shadow: var(--shadow);
+        padding: 32px;
+        margin-bottom: 28px;
+      }
+
+      .eyebrow {
+        margin: 0 0 12px;
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        line-height: 1.2;
+        margin: 0;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        max-width: 860px;
+        font-size: clamp(34px, 6vw, 68px);
+      }
+
+      h2 {
+        font-size: 28px;
+        margin-bottom: 14px;
+      }
+
+      h3 {
+        font-size: 18px;
+        margin-bottom: 8px;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .lead {
+        max-width: 780px;
+        margin-top: 18px;
+        font-size: 18px;
+        color: #241f19;
+      }
+
+      .grid {
+        display: grid;
+        gap: 20px;
+      }
+
+      .grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid.three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      section {
+        margin-top: 24px;
+      }
+
+      .card {
+        border: 2px solid var(--line);
+        background: var(--panel);
+        box-shadow: 4px 4px 0 var(--line);
+        border-radius: 8px;
+        padding: 22px;
+      }
+
+      .card.highlight {
+        background: var(--green);
+      }
+
+      .card.blue {
+        background: var(--blue);
+      }
+
+      .number {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        margin-bottom: 12px;
+        border: 2px solid var(--line);
+        border-radius: 50%;
+        background: var(--accent-strong);
+        font-weight: 900;
+      }
+
+      ul,
+      ol {
+        margin: 12px 0 0;
+        padding-left: 20px;
+      }
+
+      li {
+        margin: 8px 0;
+      }
+
+      .tag-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 20px;
+      }
+
+      .tag {
+        border: 2px solid var(--line);
+        background: #fff;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        background: var(--panel);
+        border: 2px solid var(--line);
+        box-shadow: 4px 4px 0 var(--line);
+      }
+
+      th,
+      td {
+        border-bottom: 2px solid var(--line);
+        padding: 14px 16px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: var(--accent);
+        font-size: 14px;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      code {
+        border: 1px solid #c9bfa8;
+        background: #fff3cf;
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 0.92em;
+      }
+
+      .checklist li::marker {
+        content: "□  ";
+        font-weight: 900;
+      }
+
+      .footer-note {
+        margin-top: 28px;
+        padding: 18px 20px;
+        border-left: 6px solid var(--accent-strong);
+        background: #fffdf6;
+      }
+
+      @media (max-width: 800px) {
+        main {
+          width: min(100% - 20px, 1120px);
+          padding-top: 18px;
+        }
+
+        header {
+          padding: 24px;
+        }
+
+        .grid.two,
+        .grid.three {
+          grid-template-columns: 1fr;
+        }
+
+        table {
+          display: block;
+          overflow-x: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">OpenSpace Open Source Readiness</p>
+        <h1>把 OpenSpace 开源成一个可被理解、可被运行、可被共建的项目</h1>
+        <p class="lead">
+          开源不是简单把仓库设为 public，而是让第一次看到项目的人能快速判断价值、跑起来、理解边界，并知道如何安全地贡献。
+        </p>
+        <div class="tag-row" aria-label="核心目标">
+          <span class="tag">本地优先</span>
+          <span class="tag">可复现启动</span>
+          <span class="tag">文档可信</span>
+          <span class="tag">贡献低摩擦</span>
+          <span class="tag">数据安全</span>
+        </div>
+      </header>
+
+      <section class="grid three" aria-label="开源目标">
+        <article class="card highlight">
+          <span class="number">1</span>
+          <h2>产品目标</h2>
+          <p>
+            清晰传达 OpenSpace 是 Programmable AI Team OS：用户设定 Goal，系统组织 AI Team、Workflow 和知识沉淀，而不是另一个普通聊天壳。
+          </p>
+        </article>
+        <article class="card blue">
+          <span class="number">2</span>
+          <h2>工程目标</h2>
+          <p>
+            让开发者可以在干净环境中完成 <code>pnpm install</code>、<code>pnpm dev</code>、打开项目、发送第一条 @ 消息的完整链路。
+          </p>
+        </article>
+        <article class="card">
+          <span class="number">3</span>
+          <h2>社区目标</h2>
+          <p>
+            建立 issue、PR、路线图和行为规则，让外部贡献集中在 bug 修复、runtime adapter、workflow 模板和文档改进上。
+          </p>
+        </article>
+      </section>
+
+      <section>
+        <h2>开源前准备清单</h2>
+        <div class="grid two">
+          <article class="card">
+            <h3>仓库与代码卫生</h3>
+            <ul class="checklist">
+              <li>确认仓库中没有密钥、token、个人路径、私有域名或真实用户数据。</li>
+              <li>检查 <code>.gitignore</code> 覆盖 <code>.env</code>、SQLite 数据库、日志、构建产物和本地缓存。</li>
+              <li>跑通 <code>pnpm typecheck</code>、<code>pnpm lint</code>、<code>pnpm build</code>，并记录已知失败项。</li>
+              <li>删除或标注实验性 spike 中不应被用户依赖的脚本。</li>
+              <li>确认默认配置只监听本地地址，避免首次运行暴露到公网。</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <h3>文档与上手路径</h3>
+            <ul class="checklist">
+              <li>更新 README 的一句话定位、截图、快速开始、常用命令和排障入口。</li>
+              <li>补齐 <code>CONTRIBUTING.md</code>、<code>CODE_OF_CONDUCT.md</code>、<code>SECURITY.md</code>。</li>
+              <li>明确 Node.js、pnpm、Codex CLI、Cursor CLI / SDK 的版本要求。</li>
+              <li>提供最小 smoke test：从 Welcome 页打开 workspace，到 #general 发送第一条消息。</li>
+              <li>把产品边界写清楚：单用户、本地工具、非企业权限系统、非托管 Agent 市场。</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <h3>许可证与治理</h3>
+            <ul class="checklist">
+              <li>确认 <code>LICENSE</code> 与项目商业化预期一致，并在 README 中声明。</li>
+              <li>定义 maintainers、review 规则、版本发布节奏和 issue triage 标签。</li>
+              <li>准备 GitHub issue templates：Bug、Feature、Runtime Adapter、Docs。</li>
+              <li>准备 PR template：变更说明、测试结果、截图或录屏、兼容性影响。</li>
+              <li>给重大设计变更设定 RFC / discussion 流程，避免路线图被随机 PR 拉偏。</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <h3>安全与隐私</h3>
+            <ul class="checklist">
+              <li>说明数据落在 <code>&lt;workspace&gt;/.openspace/</code> 与 <code>~/.openspace/projects.json</code> 的边界。</li>
+              <li>明确哪些文件建议入仓，哪些文件必须保持本地，例如 <code>openspace.db</code>。</li>
+              <li>为 CLI runtime 调用外部模型 API 的行为写出透明说明。</li>
+              <li>添加漏洞报告方式和不公开披露窗口。</li>
+              <li>检查日志中不会默认写入 prompt、secret、完整本地路径或敏感输出。</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="card blue">
+        <h2>极简部署方案：install.sh</h2>
+        <p>
+          OpenSpace 开源后的主安装路径采用宿主机 <code>scripts/install.sh</code>，目标是一行命令完成拉取、安装依赖、构建和 PM2 常驻启动，同时复用用户本机已登录的
+          <code>codex</code> / <code>cursor-agent</code>。
+        </p>
+        <ul>
+          <li>推荐命令：<code>curl -fsSL https://raw.githubusercontent.com/coppynight/openspace/main/scripts/install.sh | bash</code></li>
+          <li>应用目录：<code>~/.openspace/app</code></li>
+          <li>数据目录：<code>~/.openspace</code></li>
+          <li>访问地址：<code>http://127.0.0.1:4179</code></li>
+          <li>管理命令：<code>pm2 logs openspace</code>、<code>pm2 restart openspace --update-env</code>、<code>pm2 stop openspace</code></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>达到的目标与验收标准</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>目标</th>
+              <th>验收方式</th>
+              <th>优先级</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>陌生开发者 10 分钟内理解项目价值</td>
+              <td>README 首屏包含定位、截图、核心能力、非目标和快速开始链接。</td>
+              <td>必须</td>
+            </tr>
+            <tr>
+              <td>干净机器可以稳定启动</td>
+              <td><code>pnpm install && pnpm dev</code> 后访问前端和后端地址，完成本地 smoke test。</td>
+              <td>必须</td>
+            </tr>
+            <tr>
+              <td>贡献者知道从哪里下手</td>
+              <td>Good first issue、adapter、workflow、docs 四类贡献入口清晰可见。</td>
+              <td>必须</td>
+            </tr>
+            <tr>
+              <td>隐私模型可信</td>
+              <td>文档明确本地数据、可入仓数据、外部 CLI / API 调用和用户责任边界。</td>
+              <td>必须</td>
+            </tr>
+            <tr>
+              <td>项目路线不被稀释</td>
+              <td>README、product brief、PLAN 三者对定位、非目标和当前焦点保持一致。</td>
+              <td>重要</td>
+            </tr>
+            <tr>
+              <td>发布后可持续运营</td>
+              <td>每周 triage issue，每个版本有 changelog，重大方向先 discussion 再实现。</td>
+              <td>重要</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="grid two">
+        <article class="card">
+          <h2>建议发布节奏</h2>
+          <ol>
+            <li>Internal Review：完成安全扫描、文档校对、最小启动链路验证。</li>
+            <li>Soft Launch：先邀请少量开发者试跑，收集安装、概念理解和 runtime 配置问题。</li>
+            <li>Public Launch：仓库公开，同步发布 README、路线图、贡献指南和首批 good first issues。</li>
+            <li>Post Launch：48 小时内集中处理安装问题，第一周后整理 FAQ 和下一版计划。</li>
+          </ol>
+        </article>
+
+        <article class="card">
+          <h2>首批共建方向</h2>
+          <ul>
+            <li>Runtime adapters：Claude、Kimi、Copilot、Gemini 等 CLI / SDK 适配。</li>
+            <li>Workflow templates：feature、bugfix、research 之外的真实团队流程。</li>
+            <li>Onboarding polish：错误提示、空状态、首次运行排障和配置检测。</li>
+            <li>Docs and examples：真实项目 walkthrough、截图、架构图和常见问题。</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="card">
+        <h2>GitHub 发布镜像</h2>
+        <p>
+          公司 GitLab 继续作为日常开发主仓库，GitHub 只承载开源发布结果。公开发布时使用
+          <code>scripts/publish-github.sh</code> 从内部 <code>main</code> 生成本地
+          <code>public-main</code> squashed snapshot，再推送到
+          <code>git@github.com:JeromeYangtao/openspace.git</code> 的 <code>main</code> 分支。
+        </p>
+        <ul>
+          <li>日常 commit、实验分支和内部历史只保留在 GitLab。</li>
+          <li>发布前必须保证工作区干净，并完成密钥、私有域名、内部数据检查。</li>
+          <li>GitHub 只接收整理后的公开 release commit，避免暴露内部提交历史。</li>
+        </ul>
+      </section>
+
+      <section class="footer-note">
+        <h2>一句话原则</h2>
+        <p>
+          开源版本的目标不是展示所有想象力，而是让用户相信：这个项目能跑、边界清楚、值得参与，并且会沿着 Programmable AI Team OS 的方向持续进化。
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "openspace-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Phase 0 CLI Bridge spike prototypes for OpenSpace",
+  "scripts": {
+    "demo:codex": "tsx src/demo.ts codex",
+    "demo:cursor": "tsx src/demo.ts cursor",
+    "demo:claude": "tsx src/demo.ts claude",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.5"
+  }
+}

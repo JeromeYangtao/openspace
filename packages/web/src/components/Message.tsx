@@ -1,0 +1,283 @@
+/**
+ * Message 组件 — 按 sender_type 分三种样式
+ *
+ * 参考: docs/ui-reference/screenshots/10-channel-main-desktop.png
+ */
+
+import { useEffect, useMemo, useState } from 'react';
+import type { Agent, AgentActivityEvent, AgentActivityPayload, ChatMessage } from '@openspace/shared';
+import { cn } from '../lib/cn';
+import { isMessageSaved, saveMessage, unsaveMessage } from '../lib/api';
+import { Avatar } from './Avatar';
+import { MessageContent } from './MessageContent';
+
+export interface MessageProps {
+  message: ChatMessage;
+  agent?: Agent;
+  /** 流式中的增量文本（如果有），优先于 message.content 展示 */
+  streamingText?: string;
+  activityEvents?: AgentActivityEvent[];
+  /** 是否有 thread reply 已存在；用于显示 "N replies" 按钮 */
+  onOpenThread?: (rootId: string) => void;
+}
+
+export function Message({ message, agent, streamingText, activityEvents, onOpenThread }: MessageProps) {
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (message.sender_type === 'system') return;
+    let cancelled = false;
+    isMessageSaved(message.id)
+      .then((r) => {
+        if (!cancelled) setSaved(r.saved);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [message.id, message.sender_type]);
+
+  const toggleSave = async () => {
+    if (saved) {
+      await unsaveMessage(message.id);
+      setSaved(false);
+    } else {
+      await saveMessage(message.id);
+      setSaved(true);
+    }
+  };
+
+  if (message.sender_type === 'system') {
+    return <SystemMessage message={message} />;
+  }
+
+  const isStreaming = !!message.metadata?.streaming;
+  const displayText = isStreaming
+    ? streamingText ?? message.content
+    : message.content || streamingText || '';
+
+  const displayName =
+    message.sender_type === 'agent' ? agent?.name ?? 'Agent' : 'You';
+
+  const descSnippet =
+    message.sender_type === 'agent'
+      ? agent?.description?.split(/[\n。.]/)[0]?.slice(0, 60) ?? ''
+      : '';
+
+  return (
+    <div className="flex gap-3 py-1.5 group">
+      <Avatar
+        name={displayName}
+        kind={message.sender_type === 'agent' ? 'agent' : 'user'}
+        size="md"
+      />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2 text-sm">
+          <span className="font-bold">{displayName}</span>
+          {message.sender_type === 'user' && (
+            <span className="text-[11px] font-mono text-text-secondary">owner</span>
+          )}
+          {descSnippet && (
+            <span className="text-[11px] font-mono text-text-secondary truncate max-w-[260px]">
+              {descSnippet}
+            </span>
+          )}
+          <span className="text-[11px] font-mono text-text-secondary ml-auto">
+            {formatTime(message.created_at)}
+          </span>
+          <button
+            onClick={() => void toggleSave()}
+            className={cn(
+              'opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center border-2 border-black rounded',
+              saved ? 'bg-accent-yellow opacity-100' : 'bg-bg-card hover:bg-accent-yellow',
+            )}
+            title={saved ? 'Remove from saved' : 'Save message'}
+            aria-label={saved ? 'Remove from saved' : 'Save message'}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+          </button>
+        </div>
+
+        {message.sender_type === 'agent' && activityEvents && activityEvents.length > 0 && (
+          <AgentActivityPanel events={activityEvents.map((e) => e.event)} isStreaming={isStreaming} />
+        )}
+
+        <MessageContent content={displayText} isStreaming={isStreaming} />
+
+        {message.reply_count > 0 && onOpenThread && (
+          <button
+            onClick={() => onOpenThread(message.id)}
+            className="mt-1 inline-flex items-center gap-1.5 px-2 py-1 bg-accent-cyan border-2 border-black rounded text-xs font-medium hover:bg-accent-teal"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            {message.reply_count} {message.reply_count === 1 ? 'reply' : 'replies'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AgentActivityPanel({
+  events,
+  isStreaming,
+}: {
+  events: AgentActivityPayload[];
+  isStreaming: boolean;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const rows = useMemo(() => compactActivityEvents(events), [events]);
+  if (rows.length === 0) return null;
+
+  const last = rows[rows.length - 1];
+  const thinking = rows.filter((r) => r.kind === 'thinking').map((r) => r.text).join('');
+  const toolCount = rows.filter((r) => r.kind === 'tool').length;
+
+  return (
+    <div className="my-1.5 border-2 border-black rounded bg-[#eef8ff] text-xs">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full min-h-8 px-2 py-1 flex items-center gap-2 text-left font-mono hover:bg-accent-cyan"
+        aria-expanded={expanded}
+      >
+        <span className="w-4 text-center">{expanded ? '▾' : '▸'}</span>
+        <span className="font-bold">{isStreaming ? 'Thinking' : 'Execution'}</span>
+        <span className="text-text-secondary truncate">
+          {last?.text ?? 'Running'}
+          {toolCount > 0 ? ` · ${toolCount} tool event${toolCount === 1 ? '' : 's'}` : ''}
+        </span>
+      </button>
+      {expanded && (
+        <div className="border-t-2 border-black bg-white/70">
+          {thinking && (
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-[11px] leading-relaxed text-black">
+              {thinking}
+            </pre>
+          )}
+          <div className="divide-y-2 divide-black/10">
+            {rows
+              .filter((r) => r.kind !== 'thinking')
+              .map((row, idx) => (
+                <div key={`${row.kind}-${idx}`} className="px-3 py-1.5 flex gap-2 font-mono text-[11px]">
+                  <span className={cn('shrink-0 font-bold', rowTone(row.kind))}>
+                    {row.label}
+                  </span>
+                  <span className="min-w-0 break-words">{row.text}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type ActivityRow = {
+  kind: 'run' | 'session' | 'thinking' | 'text' | 'tool' | 'error';
+  label: string;
+  text: string;
+};
+
+function compactActivityEvents(events: AgentActivityPayload[]): ActivityRow[] {
+  const rows: ActivityRow[] = [];
+  for (const event of events) {
+    switch (event.type) {
+      case 'run.status':
+        rows.push({
+          kind: 'run',
+          label: event.status,
+          text: event.detail ?? event.status,
+        });
+        break;
+      case 'session.started':
+        rows.push({ kind: 'session', label: 'session', text: event.session_id });
+        break;
+      case 'session.completed':
+        rows.push({
+          kind: 'session',
+          label: 'done',
+          text: event.duration_ms ? `${Math.round(event.duration_ms / 1000)}s` : 'completed',
+        });
+        break;
+      case 'thinking.delta': {
+        const prev = rows[rows.length - 1];
+        if (prev?.kind === 'thinking') prev.text += event.text;
+        else rows.push({ kind: 'thinking', label: 'thinking', text: event.text });
+        break;
+      }
+      case 'thinking.completed':
+        rows.push({ kind: 'thinking', label: 'thinking', text: '\n' });
+        break;
+      case 'text.delta':
+        rows.push({ kind: 'text', label: 'text', text: event.text.slice(0, 180) });
+        break;
+      case 'text.completed':
+        rows.push({ kind: 'text', label: 'text', text: 'response completed' });
+        break;
+      case 'tool.started':
+        rows.push({
+          kind: 'tool',
+          label: 'tool',
+          text: `${event.tool}: ${event.summary || formatArgs(event.args)}`,
+        });
+        break;
+      case 'tool.completed':
+        rows.push({
+          kind: 'tool',
+          label: event.success ? 'ok' : 'fail',
+          text: `${event.tool}${event.exit_code !== undefined ? ` exit=${event.exit_code}` : ''}${event.duration_ms ? ` · ${event.duration_ms}ms` : ''}`,
+        });
+        break;
+      case 'error':
+        rows.push({ kind: 'error', label: 'error', text: event.message });
+        break;
+      default:
+        break;
+    }
+  }
+  return rows.slice(-80);
+}
+
+function formatArgs(args: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(args).slice(0, 160);
+  } catch {
+    return '';
+  }
+}
+
+function rowTone(kind: ActivityRow['kind']): string {
+  if (kind === 'error') return 'text-accent-red';
+  if (kind === 'tool') return 'text-accent-purple';
+  if (kind === 'run') return 'text-accent-teal';
+  if (kind === 'session') return 'text-text-secondary';
+  return 'text-black';
+}
+
+function SystemMessage({ message }: { message: ChatMessage }) {
+  return (
+    <div className="flex items-start gap-3 py-0.5 text-xs text-text-secondary">
+      <span className="font-mono pt-0.5 tabular-nums">{formatTime(message.created_at)}</span>
+      <span
+        className={cn(
+          'flex-1 whitespace-pre-wrap font-mono leading-relaxed',
+          message.content.startsWith('⚠') && 'text-accent-red',
+        )}
+      >
+        {message.content}
+      </span>
+    </div>
+  );
+}
+
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}

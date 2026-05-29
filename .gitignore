@@ -1,0 +1,35 @@
+node_modules/
+dist/
+.turbo/
+*.log
+.DS_Store
+*.local
+
+# Build outputs
+packages/*/dist/
+packages/*/dist-types/
+packages/*/build/
+packages/*/.vite/
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+
+# Spike runtime outputs (除 baseline.json 保留，其他为本地环境产物，可能含用户名/路径)
+spike/outputs/*.stderr
+spike/outputs/*.jsonl
+spike/outputs/*.ndjson
+
+# UI reference screenshots (来自作者真实 slock.ai 工作空间，含隐私，不入库)
+docs/ui-reference/screenshots/
+
+# Local data
+.openspace
+
+# Local secrets (Cursor API key, future tokens) — 永不入库
+.env
+.env.local
+.env.*.local
+

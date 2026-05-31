@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenSpace 项目规划</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #171717;
+        --muted: #55524c;
+        --paper: #fff8e8;
+        --panel: #fffdf6;
+        --accent: #ffcc4d;
+        --accent-strong: #ff7a90;
+        --line: #171717;
+        --green: #d8f6d1;
+        --blue: #d9efff;
+        --violet: #efe3ff;
+        --shadow: 6px 6px 0 #171717;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.62;
+      }
+
+      main {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 40px 0 64px;
+      }
+
+      header {
+        border: 2px solid var(--line);
+        background: var(--accent);
+        box-shadow: var(--shadow);
+        padding: 32px;
+        margin-bottom: 28px;
+      }
+
+      .eyebrow {
+        margin: 0 0 12px;
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        line-height: 1.2;
+        margin: 0;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        max-width: 920px;
+        font-size: clamp(34px, 6vw, 64px);
+      }
+
+      h2 {
+        font-size: 28px;
+        margin-bottom: 14px;
+      }
+
+      h3 {
+        font-size: 18px;
+        margin-bottom: 8px;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .lead {
+        max-width: 820px;
+        margin-top: 18px;
+        font-size: 18px;
+        color: #241f19;
+      }
+
+      .tag-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 20px;
+      }
+
+      .tag {
+        border: 2px solid var(--line);
+        background: #fff;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      section {
+        margin-top: 24px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 20px;
+      }
+
+      .grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid.three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .card {
+        border: 2px solid var(--line);
+        background: var(--panel);
+        box-shadow: 4px 4px 0 var(--line);
+        border-radius: 8px;
+        padding: 22px;
+      }
+
+      .green {
+        background: var(--green);
+      }
+
+      .blue {
+        background: var(--blue);
+      }
+
+      .violet {
+        background: var(--violet);
+      }
+
+      .number {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        margin-bottom: 12px;
+        border: 2px solid var(--line);
+        border-radius: 50%;
+        background: var(--accent-strong);
+        font-weight: 900;
+      }
+
+      ul,
+      ol {
+        margin: 12px 0 0;
+        padding-left: 20px;
+      }
+
+      li {
+        margin: 8px 0;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        background: var(--panel);
+        border: 2px solid var(--line);
+        box-shadow: 4px 4px 0 var(--line);
+      }
+
+      th,
+      td {
+        border-bottom: 2px solid var(--line);
+        padding: 14px 16px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: var(--accent);
+        font-size: 14px;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      code {
+        border: 1px solid #c9bfa8;
+        background: #fff3cf;
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 0.92em;
+      }
+
+      .footer-note {
+        margin-top: 28px;
+        padding: 18px 20px;
+        border-left: 6px solid var(--accent-strong);
+        background: #fffdf6;
+      }
+
+      @media (max-width: 800px) {
+        main {
+          width: min(100% - 20px, 1120px);
+          padding-top: 18px;
+        }
+
+        header {
+          padding: 24px;
+        }
+
+        .grid.two,
+        .grid.three {
+          grid-template-columns: 1fr;
+        }
+
+        table {
+          display: block;
+          overflow-x: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">OpenSpace Project Plan</p>
+        <h1>Programmable AI Team OS 的交付路线</h1>
+        <p class="lead">
+          OpenSpace 的规划围绕一个主线展开：用户只需要设定 Goal，系统自动组织 AI Team、Workflow、知识沉淀和能力进化，让本地 AI 协作从聊天变成可编排的团队操作系统。
+        </p>
+        <div class="tag-row" aria-label="核心方向">
+          <span class="tag">Goal First</span>
+          <span class="tag">Team Driven</span>
+          <span class="tag">Workflow OS</span>
+          <span class="tag">Knowledge Loop</span>
+          <span class="tag">Local First</span>
+        </div>
+      </header>
+
+      <section class="grid three" aria-label="项目定位">
+        <article class="card green">
+          <span class="number">1</span>
+          <h2>产品定位</h2>
+          <p>
+            OpenSpace 是 Programmable AI Team OS：不是普通聊天壳，而是围绕 Goal、Team、Workflow 和 Knowledge 运转的本地 AI 协作系统。
+          </p>
+        </article>
+        <article class="card blue">
+          <span class="number">2</span>
+          <h2>当前状态</h2>
+          <p>
+            Sprint 1 到 Sprint 7 已完成，MVP 已具备项目创建、AI 团队组建、Workflow 执行、批准流、沉淀、评估和团队协作式流程设计。
+          </p>
+        </article>
+        <article class="card violet">
+          <span class="number">3</span>
+          <h2>下一阶段</h2>
+          <p>
+            Sprint 8+ 聚焦真实任务体验、即时学习回路、团队级健康视图和 Worktree 隔离，让系统在日常开发中持续变可靠。
+          </p>
+        </article>
+      </section>
+
+      <section>
+        <h2>六层架构</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>层级</th>
+              <th>职责</th>
+              <th>代表能力</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Layer 6: Capability</td>
+              <td>能力强化</td>
+              <td>Evaluator、Coach、Agent description 演化</td>
+            </tr>
+            <tr>
+              <td>Layer 5: Knowledge</td>
+              <td>集体知识</td>
+              <td>Scribe、decisions、lessons、ContextBuilder 注入</td>
+            </tr>
+            <tr>
+              <td>Layer 4: Responsibility</td>
+              <td>职责框架</td>
+              <td>Step × Agent、executor、approver、用户介入</td>
+            </tr>
+            <tr>
+              <td>Layer 3: Workflow</td>
+              <td>工作流甬道</td>
+              <td>声明式 YAML、Runner、Import / Export</td>
+            </tr>
+            <tr>
+              <td>Layer 2: Team</td>
+              <td>团队成员</td>
+              <td>Team Architect、Facilitator、Agent Profile</td>
+            </tr>
+            <tr>
+              <td>Layer 1: Goal</td>
+              <td>项目目标</td>
+              <td>Create Project、workspace、goal 作为一等公民</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>已交付路线</h2>
+        <div class="grid two">
+          <article class="card">
+            <h3>Sprint 1-3：协作骨架</h3>
+            <ul>
+              <li>Foundation + Goal → AI Team：从目标生成可用团队。</li>
+              <li>Workflow Framework：YAML 工作流可被触发、分步执行并完结。</li>
+              <li>Responsibility + User Intervention：批准流、用户评论、override、abort、导入导出。</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Sprint 4-5：学习闭环</h3>
+            <ul>
+              <li>Delivery Loop：Scribe 从 thread 中提炼 decisions 和 lessons。</li>
+              <li>Evolution Loop：Evaluator 和 Coach 基于表现提出 Agent description 修改建议。</li>
+              <li>Intelligence Tab：让用户审批、回看和应用沉淀。</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Sprint 6-7：团队智能</h3>
+            <ul>
+              <li>Onboarding Loop：新项目自动分析，生成项目画像和推荐任务。</li>
+              <li>Skill Matrix：统计 tool_call，形成 Agent 能力地图。</li>
+              <li>Team-First Workflow Design：Facilitator 主持团队讨论并产出 workflow draft。</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Sprint 4-ext：Runtime 旁路</h3>
+            <ul>
+              <li><code>CursorSdkAdapter</code> 与 CLI Adapter 并存。</li>
+              <li><code>OPENSPACE_CURSOR_BACKEND=sdk|cli</code> 可切换。</li>
+              <li>统一 tool use 解析与 Activity 摘要。</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>Sprint 8+ 候选路线</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>阶段</th>
+              <th>主题</th>
+              <th>关键交付</th>
+              <th>闭环</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Sprint 8</td>
+              <td>反馈姿势 + 真实任务体验</td>
+              <td>消息 inline 👍/👎、feedback reason、长输出策略、running 状态 override、Activity 降噪</td>
+              <td>L4 + L5</td>
+            </tr>
+            <tr>
+              <td>Sprint 9</td>
+              <td>即时回路 + dogfood 第一轮</td>
+              <td>Coach 阈值即时触发、右侧 suggested edit rail、拒绝沉淀进入 lessons</td>
+              <td>L5 → L6</td>
+            </tr>
+            <tr>
+              <td>Sprint 10</td>
+              <td>团队级视图 + Worktree</td>
+              <td>Team Health、Project Intelligence 学习速率视图、Worktree 隔离支持多 Agent 并发</td>
+              <td>L6 → L7 + L4</td>
+            </tr>
+            <tr>
+              <td>Sprint 11+</td>
+              <td>回归广度扩展</td>
+              <td>多 runtime、Marketplace、桌面打包、团队模板、跨 Project 视图升级</td>
+              <td>生态扩展</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="grid two">
+        <article class="card blue">
+          <h2>近期验收重点</h2>
+          <ul>
+            <li>真实开发任务中，用户可以快速判断 Agent 是否靠谱。</li>
+            <li>反馈能够低摩擦进入系统，并转化为后续上下文或 Agent 修改建议。</li>
+            <li>长输出、失败、卡住、取消和重试的体验足够明确。</li>
+            <li>多个 Agent 并行时，工作区变更不会相互踩踏。</li>
+          </ul>
+        </article>
+
+        <article class="card green">
+          <h2>工程约束</h2>
+          <ul>
+            <li>保持本地优先：SQLite、Fastify、WebSocket、CLI / SDK Adapter。</li>
+            <li>Project 是隔离边界：上下文、任务、知识和 workflow 都按 Project 组织。</li>
+            <li>Agent 不拥有独立 workspace；并发隔离优先通过 Worktree 解决。</li>
+            <li>新增能力必须回到 Goal → Team → Workflow → Knowledge → Capability 主线。</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="footer-note">
+        <h2>当前一句话目标</h2>
+        <p>
+          MVP 已完成后，OpenSpace 的下一步不是堆更多按钮，而是把真实任务中的反馈、学习、团队状态和并发安全跑顺，让 AI Team 在项目里越用越懂上下文。
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

@@ -53,6 +53,7 @@ import {
 import { snapshotRunWorker, startRunWorker, stopRunWorker } from './agents/run-worker.js';
 import { projectsService } from './config/projects-service.js';
 import { warmUpAllProjects } from './routes/_helpers.js';
+import { registerStaticDocs } from './static-docs.js';
 import { registerStaticWeb } from './static-web.js';
 
 async function main() {
@@ -176,6 +177,9 @@ async function main() {
 
   // WebSocket
   registerWSRoute(app);
+
+  // Static project docs: serve repo docs/*.html and related assets under /docs.
+  await registerStaticDocs(app, { logger: app.log });
 
   // Production web app: serve packages/web/dist from the API server.
   // In dev, Vite still owns the frontend on 4178 and proxies /api + /ws.

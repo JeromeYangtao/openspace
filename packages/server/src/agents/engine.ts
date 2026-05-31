@@ -242,12 +242,13 @@ export async function triggerAgent(
             });
           }
 
-          // 状态切换：首个 text/thinking delta → working
+          // 状态切换：首个 text/thinking/tool/approval 事件 → working
           if (
             !hasSwitchedToWorking &&
             (event.type === 'text.delta' ||
               event.type === 'thinking.delta' ||
-              event.type === 'tool.started')
+              event.type === 'tool.started' ||
+              event.type === 'approval.required')
           ) {
             hasSwitchedToWorking = true;
             agentRunRepo.updateStatus(db, run.id, 'working');

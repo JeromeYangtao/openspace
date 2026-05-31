@@ -125,6 +125,7 @@ export type AgentActivityPayload =
       type: 'approval.required';
       call_id?: string;
       title: string;
+      kind?: 'command' | 'file_change' | 'permissions';
       command?: string;
       reason?: string;
       supported: boolean;

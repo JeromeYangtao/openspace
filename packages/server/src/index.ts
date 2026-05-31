@@ -32,6 +32,7 @@ import { importBuiltinsForProject } from './workflows/builtin-import.js';
 import { deriveResponsibilitiesForWorkflow } from './workflows/derive-responsibilities.js';
 import { startEvaluatorScheduler } from './system-agents/evaluator.js';
 import { channelRoutes } from './routes/channels.js';
+import { agentApprovalRoutes } from './routes/agent-approvals.js';
 import { agentRoutes } from './routes/agents.js';
 import { taskRoutes } from './routes/tasks.js';
 import { runtimesRoutes } from './routes/runtimes.js';
@@ -166,6 +167,7 @@ async function main() {
   await settingsRoutes(app);
   await projectRoutes(app);
   await channelRoutes(app);
+  await agentApprovalRoutes(app);
   await agentRoutes(app);
   await taskRoutes(app);
   await workflowRoutes(app);

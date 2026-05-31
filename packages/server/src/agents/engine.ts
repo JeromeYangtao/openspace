@@ -419,6 +419,9 @@ function toAgentActivityPayload(event: CLIEvent): AgentActivityPayload {
       summary: summarizeToolActivity(event.tool, event.args),
     };
   }
+  if (event.type === 'approval.required') {
+    return event;
+  }
   return event;
 }
 

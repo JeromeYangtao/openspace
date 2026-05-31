@@ -58,7 +58,7 @@ export class CodexAdapter implements CLIAdapter {
       '-s',
       params.permissive ? 'workspace-write' : 'read-only',
       '-a',
-      'never',
+      'on-request',
       'exec',
       '--json',
       '--skip-git-repo-check',

@@ -173,8 +173,8 @@ openspace/
 │   ├── per-project-storage-design.md  # Per-project 存储设计
 │   ├── cli-event-format.md       # CLI 事件格式对照
 │   ├── cursorsdkadapter.md       # Cursor SDK 旁路调研
+│   ├── project-plan.html         # 项目规划在线 HTML
 │   └── ui-reference/             # UI 视觉基准规范
-├── PLAN.md               # 战术执行计划（当前 + 未来 Sprint）
 ├── pnpm-workspace.yaml
 └── package.json
 ```
@@ -183,7 +183,7 @@ openspace/
 
 | 文档 | 用途 |
 |------|------|
-| [PLAN.md](PLAN.md) | 战术执行计划 — 当前 + 未来 Sprint 的范围与验收 |
+| [docs/project-plan.html](docs/project-plan.html) | 项目规划 — 当前状态、架构、近期验收重点 |
 | [docs/product-brief.md](docs/product-brief.md) | 战略层：产品定位 / 目标用户 / 核心决策 / 非目标 |
 | [docs/technical-decisions.md](docs/technical-decisions.md) | 状态机、Token 预算、并发、错误 UI、per-project 存储等默认决策（D-N） |
 | [docs/per-project-storage-design.md](docs/per-project-storage-design.md) | Per-project SQLite + knowledge jsonl 存储设计 v0.3 |

@@ -1,7 +1,7 @@
 # OpenSpace 产品定位与目标需求
 
 > 本文档是 OpenSpace 的**战略层文档**，回答 "OpenSpace 是什么 / 为谁做 / 不做什么"。
-> `PLAN.md` 回答 "怎么分阶段做"，`docs/technical-decisions.md` 回答 "具体实现约束"。
+> `docs/project-plan.html` 回答 "当前状态 / 怎么分阶段做"，`docs/technical-decisions.md` 回答 "具体实现约束"。
 > 三层文档的所有变更都必须与本文档一致；冲突时以本文档为准。
 
 ## 文档来源与版本说明
@@ -605,7 +605,7 @@ Agent Profile 从原版 3 Tab 简化为 **3 Tab（PROFILE / ACTIVITY / FEEDBACK�
 
 ## 9. Sprint 路线图（战略层）
 
-> **本节只列每个 Sprint 的战略价值与交付目标**。详细任务清单 / Schema / 验收标准见 [`PLAN.md`](../PLAN.md)。
+> **本节只列每个 Sprint 的战略价值与交付目标**。当前状态与后续路线见 [`docs/project-plan.html`](project-plan.html)。
 
 按 6 层架构自底向上递进，**每个 Sprint 都有可演示的战略价值**：
 
@@ -659,7 +659,7 @@ Sprint 1 启动前需要拍板的议题。其他议题在对应 Sprint 前决定
 | v0.3 草案 | 2026-04-23 | 聚焦编程协作 / 砍自主学习型 Agent / 无 Agent workspace | - |
 | **v1.0** | 2026-04-23 | **产品定位跃升**：Programmable AI Team OS；6 层架构；4 Loop；6 System Agents；Sprint 1~6 路线图；schema 不保留历史兼容字段 | - |
 | v1.0.1 | 2026-04-23 | v1.0 Review 决议落地：S-1 起止点明确为 Welcome → Send；S-2 / D-7 改表述为"同名 Agent 各归属不同 Project"；D-3 补兜底三件套逻辑；§9 拆分 Sprint 4（Scribe 单独，Facilitator 延后到 Sprint 7）；§10 加 Sprint 启动前扫描规则 | - |
-| **v1.1** | 2026-04-30 | **文档体系简化**：§9 Sprint 路线图压缩为单表（详情移至 `PLAN.md`）；删除 §11 实现指引（迁移已完成 / PLAN.md / technical-decisions.md / ui-reference 已落地） | - |
+| **v1.1** | 2026-04-30 | **文档体系简化**：§9 Sprint 路线图压缩为单表；删除 §11 实现指引（迁移已完成 / technical-decisions.md / ui-reference 已落地） | - |
 
 ---
 

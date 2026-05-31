@@ -333,7 +333,7 @@ tasks:           (空)
 ### 首次体验
 
 - 前端检测 `/api/projects` 返回空 → 显示 **Welcome 页**
-- Welcome 页引导用户点 `[+ New Project]` → Create Project 三步向导（详见 `PLAN.md Sprint 1 §1.3.2`）
+- Welcome 页引导用户点 `[+ New Project]` → Create Project 三步向导
 - 第一步填 Name + Goal + Workspace
 - 第二步由 Team Architect System Agent 自动推荐团队（D-15 / D-19）
 - 用户 Approve 后才创建第一批数据

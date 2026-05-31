@@ -88,6 +88,48 @@ function commandFromParams(params: Record<string, unknown>): string | undefined 
   return undefined;
 }
 
+function stringFromParams(params: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = params[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function compactJson(value: unknown, maxLength = 1200): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  try {
+    const json = JSON.stringify(value, null, 2);
+    return json.length > maxLength ? `${json.slice(0, maxLength)}...` : json;
+  } catch {
+    return undefined;
+  }
+}
+
+function approvalDetail(
+  kind: 'command' | 'file_change' | 'permissions',
+  params: Record<string, unknown>,
+): string | undefined {
+  if (kind === 'command') {
+    return stringFromParams(params, ['cwd', 'workdir', 'workingDirectory']);
+  }
+
+  if (kind === 'permissions') {
+    return compactJson({
+      permissions: params.permissions,
+      grantRoot: params.grantRoot,
+      writableRoots: params.writableRoots,
+    });
+  }
+
+  const path =
+    stringFromParams(params, ['path', 'filePath', 'file', 'targetPath']) ??
+    stringFromParams(params, ['cwd', 'workdir', 'workingDirectory']);
+  const diff = stringFromParams(params, ['diff', 'patch', 'changes']);
+  const summary = compactJson(params.changes ?? params.files ?? params.edits);
+  return [path ? `Path: ${path}` : undefined, diff ?? summary].filter(Boolean).join('\n\n') || undefined;
+}
+
 function errorMessageFromNotification(params: Record<string, unknown>): string {
   if (typeof params.message === 'string' && params.message) return params.message;
   const error = params.error;
@@ -164,11 +206,26 @@ export class CodexAppServerAdapter implements CLIAdapter {
       child.stderr?.on('data', (d) => (err += d.toString()));
       child.on('error', (e) => resolve({ installed: false, error: e.message }));
       child.on('close', (code) => {
-        if (code === 0) {
-          resolve({ installed: true, version: out.trim() || undefined, path: 'codex app-server' });
-        } else {
+        if (code !== 0) {
           resolve({ installed: false, error: err.trim() || `codex exited ${code}` });
+          return;
         }
+        const version = out.trim() || undefined;
+        const help = spawn('codex', ['app-server', '--help'], { stdio: ['ignore', 'pipe', 'pipe'] });
+        let helpErr = '';
+        help.stderr?.on('data', (d) => (helpErr += d.toString()));
+        help.on('error', (e) => resolve({ installed: false, version, error: e.message }));
+        help.on('close', (helpCode) => {
+          if (helpCode === 0) {
+            resolve({ installed: true, version, path: 'codex app-server' });
+          } else {
+            resolve({
+              installed: false,
+              version,
+              error: helpErr.trim() || `codex app-server unavailable (${helpCode})`,
+            });
+          }
+        });
       });
     });
   }
@@ -311,6 +368,7 @@ export class CodexAppServerAdapter implements CLIAdapter {
         const kind = approvalKind(method);
         const title = approvalTitle(method);
         const command = commandFromParams(requestParams);
+        const detail = approvalDetail(kind, requestParams);
         const reason =
           typeof requestParams.reason === 'string'
             ? requestParams.reason
@@ -346,6 +404,7 @@ export class CodexAppServerAdapter implements CLIAdapter {
           title,
           kind,
           command,
+          detail,
           reason,
           supported: true,
         });

@@ -127,6 +127,7 @@ export type AgentActivityPayload =
       title: string;
       kind?: 'command' | 'file_change' | 'permissions';
       command?: string;
+      detail?: string;
       reason?: string;
       supported: boolean;
     }

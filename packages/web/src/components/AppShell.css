@@ -1,0 +1,175 @@
+.app-shell {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell__desktop-sidebar {
+  flex: 0 0 16rem;
+  min-width: 0;
+  min-height: 0;
+}
+
+.app-shell__main {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--color-bg-main);
+}
+
+.app-shell__mobile-drawer,
+.app-shell__menu-button,
+.app-side-panel__mobile-close {
+  display: none;
+}
+
+.app-shell__icon-button,
+.app-shell__menu-button,
+.app-side-panel__mobile-close {
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #000;
+  border-radius: 6px;
+  background: var(--color-bg-card);
+}
+
+.app-shell__icon-button {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+}
+
+.app-shell__icon-button:hover,
+.app-shell__menu-button:hover,
+.app-side-panel__mobile-close:hover {
+  background: var(--color-accent-yellow);
+}
+
+.app-side-panel {
+  display: flex;
+  flex: 0 0 24rem;
+  min-width: 0;
+  min-height: 0;
+}
+
+@media (max-width: 767px) {
+  .app-shell-lock-scroll {
+    overflow: hidden;
+  }
+
+  .app-shell__desktop-sidebar {
+    display: none;
+  }
+
+  .app-shell__main {
+    width: 100%;
+    padding-top: 44px;
+  }
+
+  .app-shell__menu-button {
+    position: fixed;
+    top: calc(8px + env(safe-area-inset-top));
+    left: 8px;
+    z-index: 30;
+    display: inline-flex;
+    width: 36px;
+    height: 36px;
+    box-shadow: 3px 3px 0 #000;
+  }
+
+  .app-shell__mobile-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: block;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .app-shell__mobile-drawer--open {
+    pointer-events: auto;
+    visibility: visible;
+  }
+
+  .app-shell__scrim {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    transition: opacity 140ms ease;
+  }
+
+  .app-shell__mobile-drawer--open .app-shell__scrim {
+    opacity: 1;
+  }
+
+  .app-shell__drawer-panel {
+    position: absolute;
+    inset: 0 auto 0 0;
+    display: flex;
+    width: min(320px, 86vw);
+    min-width: 0;
+    flex-direction: column;
+    border-right: 2px solid #000;
+    background: var(--color-bg-sidebar);
+    transform: translateX(-100%);
+    transition: transform 160ms ease;
+  }
+
+  .app-shell__drawer-panel > aside {
+    flex: 1 1 auto;
+    height: auto;
+    border-right: 0;
+  }
+
+  .app-shell__mobile-drawer--open .app-shell__drawer-panel {
+    transform: translateX(0);
+  }
+
+  .app-shell__drawer-header {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: calc(10px + env(safe-area-inset-top)) 10px 10px;
+    border-bottom: 2px solid #000;
+    background: var(--color-bg-sidebar);
+  }
+
+  .app-side-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding-top: calc(42px + env(safe-area-inset-top));
+    background: var(--color-bg-main);
+  }
+
+  .app-side-panel__mobile-close {
+    position: fixed;
+    top: calc(8px + env(safe-area-inset-top));
+    left: 8px;
+    z-index: 61;
+    display: inline-flex;
+    width: 36px;
+    height: 36px;
+    box-shadow: 3px 3px 0 #000;
+  }
+
+  .app-side-panel > aside {
+    flex: 1 1 auto;
+    width: 100%;
+    height: auto;
+    border-left: 0;
+  }
+}

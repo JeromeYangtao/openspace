@@ -9,6 +9,7 @@ import { CreateAgentDialog } from './CreateAgentDialog';
 import { CreateChannelDialog } from './CreateChannelDialog';
 import { OpenProjectDialog } from './OpenProjectDialog';
 import { SearchDialog } from './SearchDialog';
+import { AppShell } from './AppShell';
 
 interface Props {
   children: React.ReactNode;
@@ -47,8 +48,7 @@ export function Layout({ children }: Props) {
 
   // v1.0 CP5b：按当前 Project 过滤 channels / agents
   // currentProjectId 为 null 时显示所有（兼容 v0 遗留数据 / 无 Project 首次启动）
-  const currentProject =
-    projects.find((p) => p.id === currentProjectId) ?? null;
+  const currentProject = projects.find((p) => p.id === currentProjectId) ?? null;
 
   // CP4：切换 Project 时拉一次 workflows 列表（用于 /command 提示）
   const fetchWorkflows = useWorkflowsStore((s) => s.fetchProjectWorkflows);
@@ -60,36 +60,34 @@ export function Layout({ children }: Props) {
 
   const visibleChannels = useMemo(() => {
     if (!currentProject) return channels;
-    return channels.filter(
-      (c) => !c.project_id || c.project_id === currentProject.id,
-    );
+    return channels.filter((c) => !c.project_id || c.project_id === currentProject.id);
   }, [channels, currentProject]);
 
   const visibleAgents = useMemo(() => {
     if (!currentProject) return agents;
-    return agents.filter(
-      (a) => !a.project_id || a.project_id === currentProject.id,
-    );
+    return agents.filter((a) => !a.project_id || a.project_id === currentProject.id);
   }, [agents, currentProject]);
 
   return (
-    <div className="h-full flex">
-      <Sidebar
-        channels={visibleChannels}
-        agents={visibleAgents}
-        projects={projects}
-        currentProject={currentProject}
-        onSelectProject={setCurrentProject}
-        onCreateProject={() => setCreateProjectOpen(true)}
-        currentChannelId={channelMatch?.params.channelId}
-        currentDmAgentId={dmMatch?.params.agentId}
-        onCreateAgent={() => setCreateAgentOpen(true)}
-        onCreateChannel={() => setCreateChannelOpen(true)}
-        onOpenSearch={() => setSearchOpen(true)}
-      />
-      <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-bg-main">
-        {children}
-      </div>
+    <AppShell
+      sidebar={({ onNavigate }) => (
+        <Sidebar
+          channels={visibleChannels}
+          agents={visibleAgents}
+          projects={projects}
+          currentProject={currentProject}
+          onSelectProject={setCurrentProject}
+          onCreateProject={() => setCreateProjectOpen(true)}
+          currentChannelId={channelMatch?.params.channelId}
+          currentDmAgentId={dmMatch?.params.agentId}
+          onCreateAgent={() => setCreateAgentOpen(true)}
+          onCreateChannel={() => setCreateChannelOpen(true)}
+          onOpenSearch={() => setSearchOpen(true)}
+          onNavigate={onNavigate}
+        />
+      )}
+    >
+      {children}
       <CreateAgentDialog
         open={createAgentOpen}
         onClose={() => setCreateAgentOpen(false)}
@@ -102,11 +100,8 @@ export function Layout({ children }: Props) {
         onCreated={(c) => upsertChannel(c)}
         projectId={currentProject?.id}
       />
-      <OpenProjectDialog
-        open={createProjectOpen}
-        onClose={() => setCreateProjectOpen(false)}
-      />
+      <OpenProjectDialog open={createProjectOpen} onClose={() => setCreateProjectOpen(false)} />
       <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
-    </div>
+    </AppShell>
   );
 }

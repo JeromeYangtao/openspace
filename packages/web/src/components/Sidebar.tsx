@@ -37,6 +37,7 @@ interface Props {
   onCreateChannel?: () => void;
   onCreateAgent?: () => void;
   onOpenSearch?: () => void;
+  onNavigate?: () => void;
 }
 
 export function Sidebar({
@@ -51,6 +52,7 @@ export function Sidebar({
   onCreateChannel,
   onCreateAgent,
   onOpenSearch,
+  onNavigate,
 }: Props) {
   const [params] = useSearchParams();
   const sidebarTab = (params.get('sidebarTab') ?? 'chat') as 'chat' | 'members';
@@ -63,7 +65,7 @@ export function Sidebar({
   };
 
   return (
-    <aside className="w-64 bg-bg-sidebar border-r-2 border-black flex flex-col h-full">
+    <aside className="w-full bg-bg-sidebar border-r-2 border-black flex flex-col h-full min-w-0">
       {/* Project 切换器（v1.0 CP5b，替换原静态 "OpenSpace" 标签，对齐原版 KaisTeam ▼） */}
       <ProjectSwitcher
         projects={projects}
@@ -72,18 +74,31 @@ export function Sidebar({
         onCreate={onCreateProject}
       />
 
-
       {/* Tab 切换 */}
       <div className="flex border-y-2 border-black">
         <TabButton active={sidebarTab === 'chat'} onClick={() => setTab('chat')}>
           {/* Chat 图标 */}
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
         </TabButton>
         <TabButton active={sidebarTab === 'members'} onClick={() => setTab('members')}>
           {/* Members 图标 */}
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
             <circle cx="9" cy="7" r="4" />
             <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
@@ -102,12 +117,14 @@ export function Sidebar({
             currentDmAgentId={currentDmAgentId}
             onCreateChannel={onCreateChannel}
             onOpenSearch={onOpenSearch}
+            onNavigate={onNavigate}
           />
         ) : (
           <MembersTabContent
             agents={agents}
             currentProject={currentProject}
             onCreateAgent={onCreateAgent}
+            onNavigate={onNavigate}
           />
         )}
       </div>
@@ -131,8 +148,16 @@ export function Sidebar({
           }
           title="Settings"
           aria-label="Settings"
+          onClick={onNavigate}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
@@ -201,16 +226,19 @@ function NavItem({
   label,
   rightSlot,
   active,
+  onNavigate,
 }: {
   to: string;
   icon?: React.ReactNode;
   label: React.ReactNode;
   rightSlot?: React.ReactNode;
   active?: boolean;
+  onNavigate?: () => void;
 }) {
   return (
     <NavLink
       to={to}
+      onClick={onNavigate}
       className={({ isActive }) =>
         cn(
           'flex items-center gap-2 px-3 py-1.5 text-sm',
@@ -236,6 +264,7 @@ function ChatTabContent({
   currentDmAgentId,
   onCreateChannel,
   onOpenSearch,
+  onNavigate,
 }: {
   channels: Channel[];
   agents: Agent[];
@@ -244,6 +273,7 @@ function ChatTabContent({
   currentDmAgentId?: string;
   onCreateChannel?: () => void;
   onOpenSearch?: () => void;
+  onNavigate?: () => void;
 }) {
   const publicChannels = channels.filter((c) => c.type === 'channel');
   const projectName = currentProject?.name;
@@ -252,8 +282,16 @@ function ChatTabContent({
     <div className="pb-3">
       {/* 工具行 */}
       <div className="px-3 pt-3 space-y-0.5">
-        <ToolButton icon={<SearchIcon />} label="Search" rightText="⌘K" onClick={onOpenSearch} />
-        <ToolLink icon={<TaskIcon />} label="Tasks" to="/tasks" />
+        <ToolButton
+          icon={<SearchIcon />}
+          label="Search"
+          rightText="⌘K"
+          onClick={() => {
+            onOpenSearch?.();
+            onNavigate?.();
+          }}
+        />
+        <ToolLink icon={<TaskIcon />} label="Tasks" to="/tasks" onNavigate={onNavigate} />
       </div>
 
       {/* CHANNELS */}
@@ -265,6 +303,7 @@ function ChatTabContent({
           icon={<span className="font-bold">#</span>}
           label={ch.name}
           active={currentChannelId === ch.id}
+          onNavigate={onNavigate}
         />
       ))}
 
@@ -287,6 +326,7 @@ function ChatTabContent({
           }
           rightSlot={<AgentStatusDot agentId={a.id} size="xs" />}
           active={currentDmAgentId === a.id}
+          onNavigate={onNavigate}
         />
       ))}
     </div>
@@ -297,10 +337,12 @@ function MembersTabContent({
   agents,
   currentProject,
   onCreateAgent,
+  onNavigate,
 }: {
   agents: Agent[];
   currentProject: Project | null;
   onCreateAgent?: () => void;
+  onNavigate?: () => void;
 }) {
   const projectName = currentProject?.name;
   return (
@@ -322,6 +364,7 @@ function MembersTabContent({
             </span>
           }
           rightSlot={<AgentStatusDot agentId={a.id} size="xs" />}
+          onNavigate={onNavigate}
         />
       ))}
       {agents.length === 0 && (
@@ -361,14 +404,17 @@ function ToolLink({
   icon,
   label,
   to,
+  onNavigate,
 }: {
   icon: React.ReactNode;
   label: string;
   to: string;
+  onNavigate?: () => void;
 }) {
   return (
     <NavLink
       to={to}
+      onClick={onNavigate}
       className={({ isActive }) =>
         cn(
           'flex items-center gap-2 px-2 py-1 text-sm rounded',
@@ -556,7 +602,8 @@ function ProjectRow({
           ⋯
         </button>
       </div>
-      {menuOpen && menuPos &&
+      {menuOpen &&
+        menuPos &&
         createPortal(
           <>
             {/* 透明遮罩：点击空白处关菜单 */}
@@ -604,7 +651,14 @@ function ProjectRow({
 // ---------- Icons (inline SVG to avoid dependency) ----------
 function SearchIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <circle cx="11" cy="11" r="8" />
       <line x1="21" y1="21" x2="16.65" y2="16.65" />
     </svg>
@@ -612,7 +666,14 @@ function SearchIcon() {
 }
 function TaskIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M9 11l3 3L22 4" />
       <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
     </svg>

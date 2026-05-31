@@ -31,10 +31,32 @@ need_cmd git
 need_cmd node
 need_cmd npm
 
+install_bubblewrap() {
+  if command -v bwrap >/dev/null 2>&1; then
+    return
+  fi
+
+  info "Installing bubblewrap for Codex sandbox support"
+  if command -v dnf >/dev/null 2>&1; then
+    dnf install -y bubblewrap
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y bubblewrap
+  elif command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    apt-get install -y bubblewrap
+  else
+    fail "bubblewrap is required for Codex app-server sandboxing. Install the package that provides bwrap, then rerun this script."
+  fi
+
+  command -v bwrap >/dev/null 2>&1 || fail "bubblewrap installation finished, but bwrap is still not in PATH."
+}
+
 node_major="$(node -p "Number(process.versions.node.split('.')[0])")"
 if [ "$node_major" -lt 20 ]; then
   fail "Node.js >= 20 is required. Current version: $(node -v)"
 fi
+
+install_bubblewrap
 
 info "Preparing install directory: $INSTALL_DIR"
 mkdir -p "$(dirname "$INSTALL_DIR")" "$DATA_DIR"

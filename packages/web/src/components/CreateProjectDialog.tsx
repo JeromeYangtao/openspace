@@ -6,7 +6,6 @@
  * Step 3: Create（创建 Project + 创建 #general channel + 批量创建 Agents + 加入 channel）
  *
  * 对齐 product-brief.md §3 场景 A / D-3 / D-19。
- * 对齐 PLAN.md Sprint 1 §1.3.2。
  */
 
 import { useState } from 'react';

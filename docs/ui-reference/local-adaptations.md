@@ -151,7 +151,7 @@ Runtime 动态检测：启动时扫描 `which codex`、`which claude`、`which c
 
 ## 对 MVP-5（前端 Shell）的具体影响
 
-在 PLAN.md 中 MVP-5 需要新增以下子任务：
+MVP-5 前端 Shell 需要覆盖以下子任务：
 
 - [ ] 按 `design-tokens.md` 定义 Tailwind theme（或直接写 CSS variables）
 - [ ] 按 `components.md` 实现每个组件，并在 PR 描述中附上侧边对比截图

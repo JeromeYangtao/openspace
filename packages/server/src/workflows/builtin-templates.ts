@@ -1,7 +1,7 @@
 /**
  * 内置 Workflow 模板（Sprint 2 CP2，Sprint 8 / Lo-26 修复）
  *
- * 3 个模板，对应 PLAN.md Sprint 2 §2.2：
+ * 3 个内置模板：
  *   - feature-development: design → await_approval → implement → review → done
  *   - bug-fix:             reproduce → fix → verify → done
  *   - research:            gather → summarize → done

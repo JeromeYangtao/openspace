@@ -1,5 +1,5 @@
 /**
- * WebSocket 消息协议（对齐 PLAN.md MVP-3 + Sprint 2 CP4）
+ * WebSocket 消息协议（对齐 MVP WebSocket + Workflow Progress 事件）
  */
 
 import type {

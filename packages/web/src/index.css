@@ -6,8 +6,8 @@
  */
 @theme {
   /* 颜色：奶油主区 + 黄色侧边 + 粉色强调 + 黑色边框 */
-  --color-bg-main: #faf5e6;       /* 主内容区奶油色 */
-  --color-bg-sidebar: #fbda4d;    /* 侧边栏明亮黄（核心修正：不是奶油） */
+  --color-bg-main: #faf5e6; /* 主内容区奶油色 */
+  --color-bg-sidebar: #fbda4d; /* 侧边栏明亮黄（核心修正：不是奶油） */
   --color-bg-card: #ffffff;
   --color-bg-overlay: rgba(0, 0, 0, 0.5);
 
@@ -34,22 +34,31 @@
   --color-status-error: #eb3a3a;
 
   /* 字体 */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Noto Sans CJK SC', sans-serif;
+  --font-sans:
+    'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Noto Sans CJK SC', sans-serif;
   --font-mono: 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 }
 
 /* 全局基础样式 */
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
+  min-width: 0;
 }
 
 body {
   margin: 0;
+  overflow: hidden;
   background: var(--color-bg-main);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 /* section header 统一大写 + 等宽 + letter-spacing */

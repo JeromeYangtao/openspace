@@ -20,6 +20,7 @@ import { AgentProfilePanel } from '../components/AgentProfilePanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { TasksPanel } from '../components/TasksPanel';
 import { ChannelSettingsDialog } from '../components/ChannelSettingsDialog';
+import { ResponsiveSidePanel } from '../components/AppShell';
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
@@ -38,7 +39,7 @@ export function ChannelPage() {
   const projects = useProjectsStore((s) => s.projects);
   // 关键：selector 返回稳定引用（不在 selector 里创建新数组），避免 re-render 循环
   const byChannel = useMessagesStore((s) => s.byChannel);
-  const messages = channelId ? byChannel.get(channelId) ?? EMPTY_MESSAGES : EMPTY_MESSAGES;
+  const messages = channelId ? (byChannel.get(channelId) ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
   const streamBuffers = useMessagesStore((s) => s.streamBuffers);
   const activityByMessage = useMessagesStore((s) => s.activityByMessage);
   const messagesLoading = useMessagesStore((s) =>
@@ -94,10 +95,7 @@ export function ChannelPage() {
     });
   }, [channelId]);
 
-  const agentsById = useMemo(
-    () => new Map(allAgents.map((a) => [a.id, a])),
-    [allAgents],
-  );
+  const agentsById = useMemo(() => new Map(allAgents.map((a) => [a.id, a])), [allAgents]);
 
   // hook：必须在所有 early return 之前调用
   const channelCommands = useChannelCommands(channelId ?? null, false);
@@ -197,6 +195,13 @@ export function ChannelPage() {
     setParams(next);
   };
 
+  const closeSidePanel = () => {
+    const next = new URLSearchParams(params);
+    next.delete('thread');
+    next.delete('profile');
+    setParams(next);
+  };
+
   return (
     <div className="flex-1 flex min-w-0 min-h-0">
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -234,8 +239,16 @@ export function ChannelPage() {
         )}
       </div>
       {/* 右侧第 3 栏：Thread 和 Profile 互斥 */}
-      {threadId && channelId && <ThreadPanel channelId={channelId} />}
-      {!threadId && profileAgent && <AgentProfilePanel agent={profileAgent} />}
+      {threadId && channelId && (
+        <ResponsiveSidePanel onClose={closeSidePanel}>
+          <ThreadPanel channelId={channelId} />
+        </ResponsiveSidePanel>
+      )}
+      {!threadId && profileAgent && (
+        <ResponsiveSidePanel onClose={closeSidePanel}>
+          <AgentProfilePanel agent={profileAgent} />
+        </ResponsiveSidePanel>
+      )}
 
       <ConfirmDialog
         open={stopAllOpen}

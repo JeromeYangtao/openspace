@@ -10,6 +10,7 @@ import { DMHeader } from '../components/DMHeader';
 import { MessageList } from '../components/MessageList';
 import { MessageInput } from '../components/MessageInput';
 import { AgentProfilePanel } from '../components/AgentProfilePanel';
+import { ResponsiveSidePanel } from '../components/AppShell';
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
@@ -23,7 +24,7 @@ const EMPTY_MESSAGES: ChatMessage[] = [];
  */
 export function DMPage() {
   const { projectName, agentId } = useParams<{ projectName: string; agentId: string }>();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const profileParam = params.get('profile');
   const profileAgentId = profileParam?.startsWith('agent:') ? profileParam.slice(6) : null;
   const agents = useAgentsStore((s) => s.agents);
@@ -52,7 +53,7 @@ export function DMPage() {
   const channelId = generalChannel?.id;
 
   const byChannel = useMessagesStore((s) => s.byChannel);
-  const messages = channelId ? byChannel.get(channelId) ?? EMPTY_MESSAGES : EMPTY_MESSAGES;
+  const messages = channelId ? (byChannel.get(channelId) ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
   const streamBuffers = useMessagesStore((s) => s.streamBuffers);
   const activityByMessage = useMessagesStore((s) => s.activityByMessage);
   const fetchChannel = useMessagesStore((s) => s.fetchChannel);
@@ -112,6 +113,12 @@ export function DMPage() {
     });
   };
 
+  const closeSidePanel = () => {
+    const next = new URLSearchParams(params);
+    next.delete('profile');
+    setParams(next);
+  };
+
   return (
     <div className="flex-1 flex min-w-0 min-h-0">
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -125,19 +132,20 @@ export function DMPage() {
               activityByMessage={activityByMessage}
               emptyHint={`Start a conversation with ${agent.name}.`}
             />
-            <MessageInput
-              placeholder={`Message @${agent.name}`}
-              onSend={send}
-            />
+            <MessageInput placeholder={`Message @${agent.name}`} onSend={send} />
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-text-secondary font-mono p-8 text-center">
-            This project has no #general channel yet. Create one from the sidebar to start
-            messaging {agent.name}.
+            This project has no #general channel yet. Create one from the sidebar to start messaging{' '}
+            {agent.name}.
           </div>
         )}
       </div>
-      {profileAgent && <AgentProfilePanel agent={profileAgent} />}
+      {profileAgent && (
+        <ResponsiveSidePanel onClose={closeSidePanel}>
+          <AgentProfilePanel agent={profileAgent} />
+        </ResponsiveSidePanel>
+      )}
     </div>
   );
 }

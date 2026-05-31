@@ -1,29 +1,11 @@
 # OpenSpace
 
 > **Programmable AI Team OS** — 本地可编程 AI 团队操作系统。
-> 你设定 Goal，AI 自动配备 Team，团队自己设计 Workflow，系统持续沉淀经验。
 > Agent 能力由 **Cursor CLI / Cursor SDK / Codex CLI** 驱动，无需 MCP、数据 100% 本地存储在每个项目自己的 `.openspace/` 目录下。
 
 ## ✨ 特性
-
-**🎯 用得到的产品价值**
-
-- **Goal → AI Team** — 描述项目 Goal，Team Architect 3 分钟内推荐一个可用的 AI 工程团队
-- **Project 一等公民，数据可入仓** — 落在 `<workspace>/.openspace/`（`openspace.db` + `knowledge/*.jsonl`），团队通过 git 共享 workflow 与知识沉淀
-- **声明式 Workflow (YAML)** — 3 个内置模板（feature-development / bug-fix / research）+ Facilitator AI 主持 Team Discussion 产新 YAML
-- **Tasks 看板 / 全文搜索 / 收藏 / 全局 Threads + Inbox** — 跨 Project 聚合
-
-**🤝 多 Agent 协作**
-
-- `@mention` 在频道 / Thread 内触发任意 Agent
-- 链式触发 + Thread 隔离：Agent 互相 `@mention` 自动开 Thread，主线保持整洁
-- 1:1 还原 slock.ai 的 Neo-Brutalism UI（暖黄侧边栏 / 奶油主区 / 2px 黑边 / 粉色 CTA）
-
-**🧠 护城河：自演化**
-
-- **Delivery Loop** — Workflow 完成自动触发 Scribe 沉淀 `decisions` / `lessons`
-- **Evolution Loop** — Evaluator 周期评估 + Coach 提议演化 Agent description（人在回路 Apply / Rollback）
-- **适配器架构** — Cursor CLI / Cursor SDK / Codex CLI，可扩展 Claude / Kimi / Copilot / Gemini
+### 隐私安全。数据完全自己掌握，不经过第三方
+### 团队 AI 协作
 
 ## 🚀 快速开始
 
@@ -32,7 +14,7 @@
 推荐用宿主机安装模式部署 OpenSpace，这样可以直接复用本机已登录的 Codex CLI / Cursor CLI：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/coppynight/openspace/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jeromeyangtao/openspace/main/scripts/install.sh | bash
 ```
 
 安装脚本会把应用安装到 `~/.openspace/app`，数据放在 `~/.openspace`，构建完成后用 PM2 常驻启动：
@@ -66,7 +48,7 @@ OPENSPACE_REF=main
   - **[Cursor CLI](https://cursor.sh)** (`cursor-agent`)，或在 Settings 中配置 Cursor SDK API key 改走 SDK 旁路
   - 其他 runtime（Claude / Kimi / Copilot / Gemini）在 UI 中标为 "coming soon"
 
-### 启动
+### 本地启动
 
 ```bash
 pnpm install
@@ -232,23 +214,4 @@ pnpm dev            # 起前后端，手动验你改的那块
 git commit -m "feat(scope): your concise message"
 git push origin feat/your-feature
 # → 在 GitHub 上提 PR
-```
-
-### 发布到 GitHub
-
-内部 GitLab 仍作为日常开发主仓库，GitHub 只作为开源发布镜像。准备公开发布时，先确保工作区干净，再运行：
-
-```bash
-scripts/publish-github.sh
-```
-
-脚本会把内部 `main` 生成一个本地 `public-main` squashed snapshot，并推送到 `git@github.com:JeromeYangtao/openspace.git` 的 `main` 分支。可用环境变量覆盖默认值：
-
-```bash
-SOURCE_BRANCH=main
-PUBLIC_BRANCH=public-main
-GITHUB_REMOTE_NAME=github
-GITHUB_REMOTE_URL=git@github.com:JeromeYangtao/openspace.git
-GITHUB_BRANCH=main
-COMMIT_MESSAGE="release: publish open source snapshot 2026-05-29"
 ```

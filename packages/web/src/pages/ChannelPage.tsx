@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { ChatMessage } from '@openspace/shared';
 import { useChannelsStore } from '../stores/channels';
 import { useAgentsStore } from '../stores/agents';
@@ -8,7 +8,7 @@ import { useMessagesStore } from '../stores/messages';
 import { wsClient } from '../lib/ws';
 import { getChannelAgents, stopAllAgents } from '../lib/api';
 import { onChannelAgentsChanged } from '../lib/channel-agent-events';
-import { projectChannelPath, projectIndexPath, projectSettingsPath } from '../lib/routes';
+import { projectChannelPath, projectIndexPath } from '../lib/routes';
 import { useChannelCommands } from '../lib/useChannelCommands';
 import { useWorkflowsStore } from '../stores/workflows';
 import { ChannelHeader } from '../components/ChannelHeader';
@@ -41,7 +41,11 @@ export function ChannelPage() {
   const messages = channelId ? byChannel.get(channelId) ?? EMPTY_MESSAGES : EMPTY_MESSAGES;
   const streamBuffers = useMessagesStore((s) => s.streamBuffers);
   const activityByMessage = useMessagesStore((s) => s.activityByMessage);
+  const messagesLoading = useMessagesStore((s) =>
+    channelId ? s.loadingChannels.has(channelId) : false,
+  );
   const fetchChannel = useMessagesStore((s) => s.fetchChannel);
+  const showMessagesLoading = messagesLoading && messages.length === 0;
 
   const channel = channels.find((c) => c.id === channelId);
   const upsertChannel = useChannelsStore((s) => s.upsert);
@@ -130,7 +134,7 @@ export function ChannelPage() {
   }, [channelId, threadId, runsByThread, markAutoJumped, hasAutoJumped, params, setParams]);
 
   // Sprint 8 / Ro-5 fix：所有 useMemo 必须在 early return 之前调用，避免 React Hooks 顺序违规。
-  // 之前 channelAgentIdSet / channelAgents / projectAgentCount / goalIsPlaceholder 被放在
+  // 之前 channelAgentIdSet / channelAgents 被放在
   // `if (!channel)` 等 early return 之后，导致路由切换 / loading state 时 hook count 漂移，
   // 抛 "Rendered more hooks than during the previous render"。
   const channelAgentIdSet = useMemo(() => new Set(channelAgentIds), [channelAgentIds]);
@@ -138,18 +142,6 @@ export function ChannelPage() {
     () => allAgents.filter((a) => channelAgentIdSet.has(a.id)),
     [allAgents, channelAgentIdSet],
   );
-  const projectAgentCount = useMemo(() => {
-    if (!channel?.project_id) return allAgents.length;
-    return allAgents.filter((a) => a.project_id === channel.project_id).length;
-  }, [allAgents, channel?.project_id]);
-  // Sprint 8 / Lo-13: goal 未设置（空字符串）或仍是 r1 老 project 残留的占位文本时，
-  // BuildTeamBanner 提示用户去 Settings 填 goal 再触发 Team Architect。
-  const goalIsPlaceholder = useMemo(() => {
-    const proj = projects.find((p) => p.id === channel?.project_id);
-    const g = (proj?.goal ?? '').trim();
-    return g.length === 0 || g.startsWith('(Goal not set yet');
-  }, [projects, channel?.project_id]);
-
   if (!channelId || !projectName) return null;
 
   // 等 channels 加载完再判断 not-found，避免刷新时闪一下错误页
@@ -216,13 +208,6 @@ export function ChannelPage() {
           onManageMembers={() => setSettingsOpen({ open: true, tab: 'members' })}
         />
         <ActiveAgentsBanner channelId={channelId} />
-        {(projectAgentCount === 0 || goalIsPlaceholder) && (
-          <BuildTeamBanner
-            projectName={projectName}
-            agentCount={projectAgentCount}
-            goalIsPlaceholder={goalIsPlaceholder}
-          />
-        )}
         {chatTab === 'tasks' ? (
           <TasksPanel channelId={channelId} agents={allAgents} />
         ) : (
@@ -233,7 +218,11 @@ export function ChannelPage() {
               streamBuffers={streamBuffers}
               activityByMessage={activityByMessage}
               onOpenThread={openThread}
-              emptyHint={`No messages yet. Try "@${channelAgents[0]?.name ?? 'Agent'} hello".`}
+              emptyHint={
+                showMessagesLoading
+                  ? 'Loading messages…'
+                  : `No messages yet. Try "@${channelAgents[0]?.name ?? 'Agent'} hello".`
+              }
             />
             <MessageInput
               placeholder={`Message #${channel.name} — @AgentName 或 @all 触发响应`}
@@ -270,41 +259,5 @@ export function ChannelPage() {
         }}
       />
     </div>
-  );
-}
-
-/**
- * 当前 Project 还没有 agent 或 goal 是 OpenProjectDialog 写的占位符时显示的引导 banner。
- * 点击直接跳到 Project Settings 页（用户可以输入 goal + Build Team）。
- */
-function BuildTeamBanner({
-  projectName,
-  agentCount,
-  goalIsPlaceholder,
-}: {
-  projectName: string;
-  agentCount: number;
-  goalIsPlaceholder: boolean;
-}) {
-  let message: string;
-  if (agentCount === 0) {
-    message = goalIsPlaceholder
-      ? 'Project 还没有 goal 也没有 AI 团队。打开 Settings 填写 goal，让 Team Architect 推荐合适的成员。'
-      : 'Project 还没有 AI 团队。打开 Settings 让 Team Architect 基于 goal 推荐成员。';
-  } else {
-    message =
-      'Goal 还是占位符 — 设置真实 goal 才能让 Team Architect 推荐更准的团队。';
-  }
-  return (
-    <Link
-      to={projectSettingsPath(projectName)}
-      className="block px-4 py-2 bg-accent-yellow border-b-2 border-black hover:brightness-105"
-    >
-      <div className="flex items-center gap-2 text-sm">
-        <span>✨</span>
-        <span className="flex-1">{message}</span>
-        <span className="font-bold">Open Settings →</span>
-      </div>
-    </Link>
   );
 }

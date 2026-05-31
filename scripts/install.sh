@@ -54,17 +54,18 @@ fi
 cd "$INSTALL_DIR"
 
 ensure_pnpm() {
-  if command -v pnpm >/dev/null 2>&1; then
-    if pnpm_major="$(pnpm --version 2>/dev/null | cut -d. -f1)" && [ "${pnpm_major:-0}" -ge 10 ]; then
-      return 0
-    fi
+  info "Installing pnpm@$PNPM_VERSION with npm"
+  npm install -g --force "pnpm@$PNPM_VERSION"
+  hash -r
 
-    warn "Existing pnpm is unavailable or older than 10. Installing pnpm@$PNPM_VERSION with npm."
-  else
-    info "Installing pnpm@$PNPM_VERSION with npm"
+  if ! command -v pnpm >/dev/null 2>&1; then
+    fail "pnpm is still unavailable after npm install -g pnpm@$PNPM_VERSION."
   fi
 
-  npm install -g "pnpm@$PNPM_VERSION"
+  pnpm_major="$(pnpm --version 2>/dev/null | cut -d. -f1)"
+  if [ "${pnpm_major:-0}" -lt 10 ]; then
+    fail "pnpm >= 10 is required, but $(command -v pnpm) reports version $(pnpm --version)."
+  fi
 }
 
 ensure_pnpm

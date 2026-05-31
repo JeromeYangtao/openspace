@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { promisify } from 'node:util';
 import { PROCESS_TIMEOUT_MS } from '@openspace/shared';
 import {
   cancelApproval,
@@ -15,6 +16,8 @@ import type {
   SpawnSpec,
 } from './types.js';
 
+const execFileAsync = promisify(execFile);
+
 type JsonRpcId = number | string;
 type JsonRpcMessage = {
   id?: JsonRpcId;
@@ -27,6 +30,8 @@ type JsonRpcMessage = {
 const MODEL_ALIASES: Record<string, string> = {
   'gpt-5-codex': 'gpt-5.1-codex-max',
 };
+
+const FALLBACK_MODELS = ['gpt-5.1-codex-max', 'gpt-5-codex', 'gpt-5.1', 'gpt-5'];
 
 const REASONING_ALIASES: Record<string, string> = {
   none: 'none',
@@ -239,7 +244,22 @@ export class CodexAppServerAdapter implements CLIAdapter {
   }
 
   async getSupportedModels(): Promise<string[]> {
-    return ['gpt-5.1-codex-max', 'gpt-5-codex', 'gpt-5.1', 'gpt-5'];
+    try {
+      const { stdout } = await execFileAsync('codex', ['debug', 'models'], {
+        timeout: 5000,
+        maxBuffer: 20 * 1024 * 1024,
+      });
+      const catalog = JSON.parse(stdout) as {
+        models?: Array<{ slug?: unknown; visibility?: unknown }>;
+      };
+      const models =
+        catalog.models
+          ?.filter((m) => m.visibility === 'list' && typeof m.slug === 'string' && m.slug)
+          .map((m) => m.slug as string) ?? [];
+      return models.length > 0 ? models : FALLBACK_MODELS;
+    } catch {
+      return FALLBACK_MODELS;
+    }
   }
 
   async runDirect(params: BuildCommandParams, options: RunnerOptions = {}): Promise<RunnerResult> {

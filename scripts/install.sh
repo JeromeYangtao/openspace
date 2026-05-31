@@ -8,6 +8,7 @@ DATA_DIR="${OPENSPACE_HOME:-$HOME/.openspace}"
 DEFAULT_WORKSPACE="${OPENSPACE_DEFAULT_WORKSPACE:-$HOME}"
 HOST="${OPENSPACE_HOST:-127.0.0.1}"
 PORT="${OPENSPACE_PORT_SERVER:-4179}"
+PNPM_VERSION="${OPENSPACE_PNPM_VERSION:-10}"
 
 info() {
   printf '\033[1;34m==>\033[0m %s\n' "$1"
@@ -52,15 +53,21 @@ fi
 
 cd "$INSTALL_DIR"
 
-if ! command -v pnpm >/dev/null 2>&1; then
-  info "Enabling pnpm with corepack"
-  need_cmd corepack
-  corepack enable
-fi
+ensure_pnpm() {
+  if command -v pnpm >/dev/null 2>&1; then
+    if pnpm_major="$(pnpm --version 2>/dev/null | cut -d. -f1)" && [ "${pnpm_major:-0}" -ge 10 ]; then
+      return 0
+    fi
 
-if ! command -v pnpm >/dev/null 2>&1; then
-  fail "pnpm is still unavailable after corepack enable. Install pnpm >= 10 and rerun this script."
-fi
+    warn "Existing pnpm is unavailable or older than 10. Installing pnpm@$PNPM_VERSION with npm."
+  else
+    info "Installing pnpm@$PNPM_VERSION with npm"
+  fi
+
+  npm install -g "pnpm@$PNPM_VERSION"
+}
+
+ensure_pnpm
 
 info "Installing dependencies"
 pnpm install --frozen-lockfile

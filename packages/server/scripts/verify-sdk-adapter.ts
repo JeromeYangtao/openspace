@@ -18,7 +18,7 @@ const rgConfig = configureCursorRipgrep();
 import { createCodexAdapter, createCursorAdapter } from '../src/agents/adapter-factory.js';
 import { CursorSdkAdapter } from '../src/agents/cursor-sdk-adapter.js';
 import { CursorAdapter } from '../src/agents/cursor-adapter.js';
-import { CodexAdapter } from '../src/agents/codex-adapter.js';
+import { CodexAppServerAdapter } from '../src/agents/codex-app-server-adapter.js';
 import { summarizeToolArgs } from '../src/agents/summarize-tool-args.js';
 
 if (envLoad.loaded) {
@@ -70,9 +70,10 @@ console.log('1. adapter-factory 选择');
   else process.env.OPENSPACE_CURSOR_BACKEND = orig;
 
   const codex = createCodexAdapter();
-  expect(codex instanceof CodexAdapter, 'createCodexAdapter() → CodexAdapter');
+  expect(codex instanceof CodexAppServerAdapter, 'createCodexAdapter() → CodexAppServerAdapter');
   expect(codex.name === 'codex', 'Codex adapter name === codex');
   expect(typeof codex.checkInstallation === 'function', 'Codex adapter 实现 checkInstallation');
+  expect(typeof codex.runDirect === 'function', 'Codex app-server adapter 实现 runDirect');
 }
 
 console.log('\n2. CursorSdkAdapter checkInstallation');

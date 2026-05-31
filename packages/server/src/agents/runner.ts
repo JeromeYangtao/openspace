@@ -21,8 +21,8 @@ export interface RunningProcess {
 /**
  * 统一入口（推荐）：根据 adapter 类型自动选择 spawn-派 / api-direct 派路径。
  *
- * - adapter.runDirect 存在 → 直接调用（CursorSdkAdapter 等）
- * - 否则 → buildCommand + spawn 子进程（CursorAdapter / CodexAdapter / ClaudeAdapter）
+ * - adapter.runDirect 存在 → 直接调用（CursorSdkAdapter / CodexAppServerAdapter 等）
+ * - 否则 → buildCommand + spawn 子进程（CursorAdapter / ClaudeAdapter）
  *
  * 新代码统一用此函数，老代码渐进迁移。
  */

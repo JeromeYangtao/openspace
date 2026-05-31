@@ -196,6 +196,14 @@ export const getAgentActivity = (
   const q = qs.toString();
   return request<AgentActivity[]>(`/api/agents/${id}/activity${q ? `?${q}` : ''}`);
 };
+export const decideAgentApproval = (
+  id: string,
+  decision: 'approve' | 'approve_for_session' | 'reject' | 'cancel',
+) =>
+  request<{ ok: boolean }>(`/api/agent-approvals/${id}/decision`, {
+    method: 'POST',
+    body: JSON.stringify({ decision }),
+  });
 // CP8.5：getAgentWorkspace 已删除（D-8 v1.0 修订：agent 无独立 workspace）。
 // 旧前端组件如 AgentProfilePanel 的 WORKSPACE Tab 已在 CP6 中删除。
 export const joinChannel = (channelId: string, agentId: string) =>

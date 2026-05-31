@@ -3,12 +3,15 @@
 > 三个 CLI 工具（Codex / Claude / Cursor）在非交互模式下的事件格式对照。
 > 本文档是 Phase 0 CLI Spike 的直接产出，基于实际运行输出归纳。
 > Phase 1 MVP-4 实现 CLI Bridge 时，按本文档设计适配器。
+> 当前 Codex 后端默认已切到 `codex app-server --listen stdio://`，保留 `codex exec --json`
+> 作为 `OPENSPACE_CODEX_BACKEND=cli` fallback。
 
 ## 命令入口对比
 
 | 工具 | 命令 | 流式输出参数 | 工作目录参数 |
 |------|------|-------------|-------------|
-| **Codex CLI** | `codex exec` | `--json` | `-C <DIR>` |
+| **Codex app-server** | `codex app-server --listen stdio://` | JSON-RPC notifications | `cwd` / `sandboxPolicy` |
+| **Codex CLI fallback** | `codex exec` | `--json` | `-C <DIR>` |
 | **Claude Code** | `claude -p` | `--output-format stream-json` | `--add-dir <DIR>` |
 | **Cursor CLI** | `cursor-agent -p` | `--output-format stream-json [--stream-partial-output]` | `--workspace <DIR>` |
 
@@ -148,10 +151,10 @@ type CLIEvent =
 
 1. **前端流式渲染**
    - Cursor 可实现字符级流式（打字机效果）
-   - Codex 只能"整条出现"（可配合 UI "thinking..." 过渡，配合假性打字机动画）
+   - Codex app-server 支持 `item/agentMessage/delta`；CLI fallback 只能"整条出现"
 2. **上下文注入**：三者都支持 stdin pipe，但长文本最佳实践是通过 prompt 拼接
 3. **Reasoning 参数**：Codex 支持 `model_reasoning_effort`，Cursor 通过 `-thinking` / `-high` 后缀模型名，Claude 未知
-4. **Sandbox / approval**：Codex 有 sandbox 选项（`-s`）和 approval 选项（`-a`）。OpenSpace 正式后端普通 agent 使用 `workspace-write` + `on-request`；只读 system agent 使用 `read-only` + `on-request`。
+4. **Sandbox / approval**：Codex 有 sandbox / approval 选项。OpenSpace 正式后端普通 agent 使用 `workspace-write` + `on-request`；只读 system agent 使用 `read-only` + `on-request`。默认 app-server backend 会接收 `item/*/requestApproval` server request，并通过 UI Approve / Reject 把决定回写 JSON-RPC；`codex exec` fallback 仍只能展示 unsupported approval，因为 exec mode 不能接收审批决定。
 
 ## 性能基线（本机采集 2026-04-22）
 

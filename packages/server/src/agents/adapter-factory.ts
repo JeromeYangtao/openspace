@@ -16,6 +16,7 @@
 import { CursorAdapter } from './cursor-adapter.js';
 import { CursorSdkAdapter } from './cursor-sdk-adapter.js';
 import { CodexAdapter } from './codex-adapter.js';
+import { CodexAppServerAdapter } from './codex-app-server-adapter.js';
 import type { Runtime } from '@openspace/shared';
 import type { CLIAdapter } from './types.js';
 
@@ -26,7 +27,9 @@ export function createCursorAdapter(): CLIAdapter {
 }
 
 export function createCodexAdapter(): CLIAdapter {
-  return new CodexAdapter();
+  const backend = (process.env.OPENSPACE_CODEX_BACKEND ?? 'app-server').toLowerCase();
+  if (backend === 'cli' || backend === 'exec') return new CodexAdapter();
+  return new CodexAppServerAdapter();
 }
 
 export function createAdapterForRuntime(runtime: Runtime): CLIAdapter | null {

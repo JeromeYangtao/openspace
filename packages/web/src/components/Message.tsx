@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Agent, AgentActivityEvent, AgentActivityPayload, ChatMessage } from '@openspace/shared';
 import { cn } from '../lib/cn';
-import { isMessageSaved, saveMessage, unsaveMessage } from '../lib/api';
+import { decideAgentApproval, isMessageSaved, saveMessage, unsaveMessage } from '../lib/api';
 import { Avatar } from './Avatar';
 import { MessageContent } from './MessageContent';
 
@@ -168,7 +168,11 @@ function AgentActivityPanel({
                     {row.label}
                   </span>
                   {row.kind === 'approval' ? (
-                    <ApprovalRequestRow text={row.text} supported={row.supported} />
+                    <ApprovalRequestRow
+                      callId={row.callId}
+                      text={row.text}
+                      supported={row.supported}
+                    />
                   ) : (
                     <span className="min-w-0 break-words">{row.text}</span>
                   )}
@@ -185,6 +189,7 @@ type ActivityRow = {
   kind: 'run' | 'session' | 'thinking' | 'text' | 'tool' | 'approval' | 'error';
   label: string;
   text: string;
+  callId?: string;
   supported?: boolean;
 };
 
@@ -243,6 +248,7 @@ function compactActivityEvents(events: AgentActivityPayload[]): ActivityRow[] {
           kind: 'approval',
           label: 'approval',
           text: [event.title, event.command, event.reason].filter(Boolean).join('\n'),
+          callId: event.call_id,
           supported: event.supported,
         });
         break;
@@ -274,13 +280,34 @@ function rowTone(kind: ActivityRow['kind']): string {
 }
 
 function ApprovalRequestRow({
+  callId,
   text,
   supported,
 }: {
+  callId?: string;
   text: string;
   supported?: boolean;
 }) {
+  const [pendingDecision, setPendingDecision] = useState<'approve' | 'reject' | null>(null);
+  const [resolved, setResolved] = useState<'approved' | 'rejected' | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [title, ...details] = text.split('\n').filter(Boolean);
+  const canDecide = supported !== false && !!callId && !resolved;
+
+  const decide = async (decision: 'approve' | 'reject') => {
+    if (!callId) return;
+    setPendingDecision(decision);
+    setError(null);
+    try {
+      await decideAgentApproval(callId, decision);
+      setResolved(decision === 'approve' ? 'approved' : 'rejected');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPendingDecision(null);
+    }
+  };
+
   return (
     <div className="min-w-0 flex-1 rounded border-2 border-black bg-accent-yellow p-2">
       <div className="font-bold text-black">{title || 'Approval requested'}</div>
@@ -292,34 +319,52 @@ function ApprovalRequestRow({
       <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
-          disabled
+          disabled={!canDecide || pendingDecision !== null}
+          onClick={() => void decide('approve')}
           title={
             supported === false
               ? 'Codex exec mode cannot receive approval decisions yet'
-              : 'Approval action is not wired yet'
+              : 'Allow this Codex action'
           }
-          className="px-2 py-1 border-2 border-black rounded bg-bg-card text-[10px] font-bold opacity-60 cursor-not-allowed"
+          className={cn(
+            'px-2 py-1 border-2 border-black rounded bg-bg-card text-[10px] font-bold',
+            canDecide && pendingDecision === null
+              ? 'hover:bg-accent-green'
+              : 'opacity-60 cursor-not-allowed',
+          )}
         >
-          Approve
+          {pendingDecision === 'approve' ? 'Approving...' : 'Approve'}
         </button>
         <button
           type="button"
-          disabled
+          disabled={!canDecide || pendingDecision !== null}
+          onClick={() => void decide('reject')}
           title={
             supported === false
               ? 'Codex exec mode cannot receive approval decisions yet'
-              : 'Approval action is not wired yet'
+              : 'Reject this Codex action'
           }
-          className="px-2 py-1 border-2 border-black rounded bg-bg-card text-[10px] font-bold opacity-60 cursor-not-allowed"
+          className={cn(
+            'px-2 py-1 border-2 border-black rounded bg-bg-card text-[10px] font-bold',
+            canDecide && pendingDecision === null
+              ? 'hover:bg-accent-red'
+              : 'opacity-60 cursor-not-allowed',
+          )}
         >
-          Reject
+          {pendingDecision === 'reject' ? 'Rejecting...' : 'Reject'}
         </button>
         {supported === false && (
           <span className="text-[10px] font-mono text-black/70">
             Codex exec cannot accept this decision yet.
           </span>
         )}
+        {resolved && (
+          <span className="text-[10px] font-mono text-black/70">
+            {resolved === 'approved' ? 'Approved' : 'Rejected'}.
+          </span>
+        )}
       </div>
+      {error && <div className="mt-1 text-[10px] font-mono text-accent-red">{error}</div>}
     </div>
   );
 }

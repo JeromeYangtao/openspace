@@ -121,7 +121,14 @@ export async function runCLI(
     child.stderr?.on('data', (chunk: Buffer) => {
       const s = chunk.toString('utf8');
       for (const line of s.split('\n')) {
-        if (line.trim()) options.onStderr?.(line);
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const approvalEvent = parseApprovalStderr(trimmed);
+        if (approvalEvent) {
+          events.push(approvalEvent);
+          options.onEvent?.(approvalEvent);
+        }
+        options.onStderr?.(line);
       }
     });
 
@@ -186,4 +193,25 @@ export async function runCLI(
       });
     });
   });
+}
+
+function parseApprovalStderr(line: string): CLIEvent | null {
+  if (!line.includes('approval is not supported in exec mode')) return null;
+
+  const title = line.includes('command execution')
+    ? 'Command approval requested'
+    : line.includes('file change')
+      ? 'File change approval requested'
+      : line.includes('apply_patch')
+        ? 'Patch approval requested'
+        : line.includes('permissions')
+          ? 'Permission approval requested'
+          : 'Approval requested';
+
+  return {
+    type: 'approval.required',
+    title,
+    reason: line,
+    supported: false,
+  };
 }

@@ -74,6 +74,15 @@ export class ActivityRecorder {
         });
         break;
 
+      case 'approval.required':
+        activityRepo.append(this.db, {
+          agent_id: this.agentId,
+          channel_id: this.channelId,
+          type: event.supported ? 'working' : 'error',
+          detail: event.command ? `${event.title}: ${event.command}` : event.title,
+        });
+        break;
+
       case 'session.completed':
         activityRepo.append(this.db, {
           agent_id: this.agentId,

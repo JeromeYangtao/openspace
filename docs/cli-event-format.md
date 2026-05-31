@@ -151,7 +151,7 @@ type CLIEvent =
    - Codex 只能"整条出现"（可配合 UI "thinking..." 过渡，配合假性打字机动画）
 2. **上下文注入**：三者都支持 stdin pipe，但长文本最佳实践是通过 prompt 拼接
 3. **Reasoning 参数**：Codex 支持 `model_reasoning_effort`，Cursor 通过 `-thinking` / `-high` 后缀模型名，Claude 未知
-4. **Sandbox**：Codex 有 sandbox 选项（`-s`），MVP 统一用 `workspace-write` + `--dangerously-bypass-approvals-and-sandbox`（本地单用户场景）
+4. **Sandbox / approval**：Codex 有 sandbox 选项（`-s`）和 approval 选项（`-a`）。OpenSpace 正式后端普通 agent 使用 `workspace-write` + `on-request`；只读 system agent 使用 `read-only` + `on-request`。
 
 ## 性能基线（本机采集 2026-04-22）
 

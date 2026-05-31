@@ -121,6 +121,14 @@ export type AgentActivityPayload =
       exit_code?: number;
       duration_ms?: number;
     }
+  | {
+      type: 'approval.required';
+      call_id?: string;
+      title: string;
+      command?: string;
+      reason?: string;
+      supported: boolean;
+    }
   | { type: 'error'; message: string; code?: string; recoverable?: boolean };
 
 // =============================================================================

@@ -167,7 +167,11 @@ function AgentActivityPanel({
                   <span className={cn('shrink-0 font-bold', rowTone(row.kind))}>
                     {row.label}
                   </span>
-                  <span className="min-w-0 break-words">{row.text}</span>
+                  {row.kind === 'approval' ? (
+                    <ApprovalRequestRow text={row.text} supported={row.supported} />
+                  ) : (
+                    <span className="min-w-0 break-words">{row.text}</span>
+                  )}
                 </div>
               ))}
           </div>
@@ -178,9 +182,10 @@ function AgentActivityPanel({
 }
 
 type ActivityRow = {
-  kind: 'run' | 'session' | 'thinking' | 'text' | 'tool' | 'error';
+  kind: 'run' | 'session' | 'thinking' | 'text' | 'tool' | 'approval' | 'error';
   label: string;
   text: string;
+  supported?: boolean;
 };
 
 function compactActivityEvents(events: AgentActivityPayload[]): ActivityRow[] {
@@ -233,6 +238,14 @@ function compactActivityEvents(events: AgentActivityPayload[]): ActivityRow[] {
           text: `${event.tool}${event.exit_code !== undefined ? ` exit=${event.exit_code}` : ''}${event.duration_ms ? ` · ${event.duration_ms}ms` : ''}`,
         });
         break;
+      case 'approval.required':
+        rows.push({
+          kind: 'approval',
+          label: 'approval',
+          text: [event.title, event.command, event.reason].filter(Boolean).join('\n'),
+          supported: event.supported,
+        });
+        break;
       case 'error':
         rows.push({ kind: 'error', label: 'error', text: event.message });
         break;
@@ -253,10 +266,62 @@ function formatArgs(args: Record<string, unknown>): string {
 
 function rowTone(kind: ActivityRow['kind']): string {
   if (kind === 'error') return 'text-accent-red';
+  if (kind === 'approval') return 'text-accent-orange';
   if (kind === 'tool') return 'text-accent-purple';
   if (kind === 'run') return 'text-accent-teal';
   if (kind === 'session') return 'text-text-secondary';
   return 'text-black';
+}
+
+function ApprovalRequestRow({
+  text,
+  supported,
+}: {
+  text: string;
+  supported?: boolean;
+}) {
+  const [title, ...details] = text.split('\n').filter(Boolean);
+  return (
+    <div className="min-w-0 flex-1 rounded border-2 border-black bg-accent-yellow p-2">
+      <div className="font-bold text-black">{title || 'Approval requested'}</div>
+      {details.length > 0 && (
+        <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-words text-[10px] text-black/75">
+          {details.join('\n')}
+        </pre>
+      )}
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          disabled
+          title={
+            supported === false
+              ? 'Codex exec mode cannot receive approval decisions yet'
+              : 'Approval action is not wired yet'
+          }
+          className="px-2 py-1 border-2 border-black rounded bg-bg-card text-[10px] font-bold opacity-60 cursor-not-allowed"
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          disabled
+          title={
+            supported === false
+              ? 'Codex exec mode cannot receive approval decisions yet'
+              : 'Approval action is not wired yet'
+          }
+          className="px-2 py-1 border-2 border-black rounded bg-bg-card text-[10px] font-bold opacity-60 cursor-not-allowed"
+        >
+          Reject
+        </button>
+        {supported === false && (
+          <span className="text-[10px] font-mono text-black/70">
+            Codex exec cannot accept this decision yet.
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function SystemMessage({ message }: { message: ChatMessage }) {

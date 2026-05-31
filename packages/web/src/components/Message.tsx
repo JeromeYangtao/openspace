@@ -247,7 +247,7 @@ function compactActivityEvents(events: AgentActivityPayload[]): ActivityRow[] {
         rows.push({
           kind: 'approval',
           label: 'approval',
-          text: [event.title, event.command, event.reason].filter(Boolean).join('\n'),
+          text: [event.title, event.command, event.detail, event.reason].filter(Boolean).join('\n'),
           callId: event.call_id,
           supported: event.supported,
         });

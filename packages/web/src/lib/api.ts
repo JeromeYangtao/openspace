@@ -39,7 +39,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers['Content-Type'] = 'application/json';
   }
 
-  const res = await fetch(path, { ...init, headers });
+  const res = await fetch(path, { ...init, headers, credentials: 'include' });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`${res.status} ${res.statusText}: ${body}`);
@@ -62,6 +62,32 @@ export const getHealth = () => request<Health>('/api/health');
 export const getRuntimes = () => request<RuntimeDetection[]>('/api/runtimes');
 export const getRuntimeModels = (id: Runtime) =>
   request<{ models: string[]; note?: string; error?: string }>(`/api/runtimes/${id}/models`);
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  role: 'admin' | 'member';
+}
+
+export const getCurrentUser = () => request<{ user: AuthUser }>('/api/auth/me');
+export const getBootstrapStatus = () =>
+  request<{ required: boolean }>('/api/auth/bootstrap-status');
+export const bootstrapAdmin = (data: { username: string; password: string }) =>
+  request<{ user: AuthUser }>('/api/auth/bootstrap', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+export const login = (data: { username: string; password: string }) =>
+  request<{ user: AuthUser }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+export const logout = () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' });
+export const changePassword = (data: { currentPassword: string; newPassword: string }) =>
+  request<{ ok: boolean }>('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 
 // Cursor backend settings (Sprint 4-ext / S-1 收尾)
 export const getCursorSettings = (validate = false) =>

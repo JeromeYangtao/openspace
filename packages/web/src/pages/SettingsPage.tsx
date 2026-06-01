@@ -11,12 +11,15 @@
 
 import { useEffect, useState } from 'react';
 import type { CursorBackend, CursorBackendStatus } from '@openspace/shared';
-import { getCursorSettings, updateCursorSettings } from '../lib/api';
+import { changePassword, getCursorSettings, updateCursorSettings } from '../lib/api';
+import { useAuthStore } from '../stores/auth';
 
 export function SettingsPage() {
   const [status, setStatus] = useState<CursorBackendStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
 
   // 表单 state
   const [backend, setBackend] = useState<CursorBackend>('cli');
@@ -25,6 +28,9 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
   const [errorFlash, setErrorFlash] = useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
 
   // 初次加载
   useEffect(() => {
@@ -91,6 +97,22 @@ export function SettingsPage() {
     }
   }
 
+  async function handleChangePassword() {
+    setChangingPassword(true);
+    setSavedFlash(null);
+    setErrorFlash(null);
+    try {
+      await changePassword({ currentPassword, newPassword });
+      setCurrentPassword('');
+      setNewPassword('');
+      setSavedFlash('Password updated.');
+    } catch (e) {
+      setErrorFlash(`Password update failed: ${(e as Error).message}`);
+    } finally {
+      setChangingPassword(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-secondary font-mono">
@@ -113,6 +135,56 @@ export function SettingsPage() {
             {refreshing ? 'Refreshing…' : '↻ Refresh'}
           </button>
         </div>
+
+        <section className="bg-bg-card border-2 border-black rounded-xl p-6 shadow-[6px_6px_0_0_#000]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold">Account</h2>
+              <p className="mt-1 text-sm text-text-secondary">
+                Signed in as <span className="font-mono font-bold">{user?.username}</span>
+                {user?.role ? ` (${user.role})` : ''}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="rounded border-2 border-black bg-white px-3 py-2 text-xs font-bold hover:bg-accent-yellow"
+            >
+              Sign out
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-bold uppercase">Current password</span>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                autoComplete="current-password"
+                className="mt-1 w-full rounded border-2 border-black bg-bg-main px-3 py-2 font-mono text-sm focus:bg-white focus:outline-none"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-bold uppercase">New password</span>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoComplete="new-password"
+                className="mt-1 w-full rounded border-2 border-black bg-bg-main px-3 py-2 font-mono text-sm focus:bg-white focus:outline-none"
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleChangePassword()}
+            disabled={changingPassword || !currentPassword || !newPassword}
+            className="mt-4 rounded border-2 border-black bg-accent-green px-4 py-2 text-sm font-bold shadow-[3px_3px_0_0_#000] hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {changingPassword ? 'Updating…' : 'Change password'}
+          </button>
+        </section>
 
         {/* Cursor Backend 卡片 */}
         <section className="bg-bg-card border-2 border-black rounded-xl p-6 shadow-[6px_6px_0_0_#000]">

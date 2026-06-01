@@ -58,6 +58,15 @@ export function Message({
     }
   };
 
+  const activityRows = useMemo(
+    () => (activityEvents ? compactActivityEvents(activityEvents.map((e) => e.event)) : []),
+    [activityEvents],
+  );
+  const approvalRows = useMemo(
+    () => activityRows.filter((row) => row.kind === 'approval'),
+    [activityRows],
+  );
+
   if (message.sender_type === 'system') {
     return <SystemMessage message={message} />;
   }
@@ -118,13 +127,23 @@ export function Message({
         </div>
 
         {message.sender_type === 'agent' && activityEvents && activityEvents.length > 0 && (
-          <AgentActivityPanel
-            events={activityEvents.map((e) => e.event)}
-            isStreaming={isStreaming}
-          />
+          <AgentActivityPanel rows={activityRows} isStreaming={isStreaming} />
         )}
 
         <MessageContent content={displayText} isStreaming={isStreaming} />
+
+        {approvalRows.length > 0 && (
+          <div className="mt-2 space-y-2">
+            {approvalRows.map((row, idx) => (
+              <ApprovalRequestRow
+                key={`${row.callId ?? 'approval'}-${idx}`}
+                callId={row.callId}
+                text={row.text}
+                supported={row.supported}
+              />
+            ))}
+          </div>
+        )}
 
         {message.reply_count > 0 && onOpenThread && (
           <button
@@ -149,15 +168,8 @@ export function Message({
   );
 }
 
-function AgentActivityPanel({
-  events,
-  isStreaming,
-}: {
-  events: AgentActivityPayload[];
-  isStreaming: boolean;
-}) {
+function AgentActivityPanel({ rows, isStreaming }: { rows: ActivityRow[]; isStreaming: boolean }) {
   const [expanded, setExpanded] = useState(false);
-  const rows = useMemo(() => compactActivityEvents(events), [events]);
   if (rows.length === 0) return null;
 
   const last = rows[rows.length - 1];
@@ -176,10 +188,6 @@ function AgentActivityPanel({
         ? previewThinkingTail(thinking)
         : 'Preparing response'
       : (last?.text ?? 'Completed');
-
-  useEffect(() => {
-    if (hasApproval) setExpanded(true);
-  }, [hasApproval]);
 
   return (
     <div
@@ -213,22 +221,14 @@ function AgentActivityPanel({
           )}
           <div className="divide-y-2 divide-black/10">
             {rows
-              .filter((r) => r.kind !== 'thinking')
+              .filter((r) => r.kind !== 'thinking' && r.kind !== 'approval')
               .map((row, idx) => (
                 <div
                   key={`${row.kind}-${idx}`}
                   className="px-3 py-1.5 flex gap-2 font-mono text-[11px]"
                 >
                   <span className={cn('shrink-0 font-bold', rowTone(row.kind))}>{row.label}</span>
-                  {row.kind === 'approval' ? (
-                    <ApprovalRequestRow
-                      callId={row.callId}
-                      text={row.text}
-                      supported={row.supported}
-                    />
-                  ) : (
-                    <span className="min-w-0 break-words">{row.text}</span>
-                  )}
+                  <span className="min-w-0 break-words">{row.text}</span>
                 </div>
               ))}
           </div>
@@ -378,7 +378,7 @@ function ApprovalRequestRow({
   };
 
   return (
-    <div className="min-w-0 flex-1 rounded border-2 border-black bg-accent-yellow p-2">
+    <div className="w-full min-w-0 rounded border-2 border-black bg-accent-yellow p-2">
       <div className="font-bold text-black">{title || 'Approval requested'}</div>
       {details.length > 0 && (
         <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-words text-[10px] text-black/75">

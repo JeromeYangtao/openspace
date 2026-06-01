@@ -66,6 +66,15 @@ export function ChannelPage() {
     };
   }, [channelId, fetchChannel]);
 
+  useEffect(() => {
+    if (!channelId) return;
+    if (!messages.some((m) => m.metadata?.streaming)) return;
+    const timer = window.setInterval(() => {
+      void fetchChannel(channelId);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [channelId, fetchChannel, messages]);
+
   // 真实 channel-agent 成员（fix: header 右上角人数从全局 11 改为 channel 真实成员数）
   const [channelAgentIds, setChannelAgentIds] = useState<string[]>([]);
   useEffect(() => {

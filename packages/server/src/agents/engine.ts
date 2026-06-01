@@ -467,7 +467,7 @@ function broadcastAgentStatus(
   status: AgentStatus,
   channelId: string,
 ): void {
-  hub.broadcast(channelId, {
+  hub.broadcastGlobal({
     type: 'agent_status',
     agent_id: agentId,
     status,

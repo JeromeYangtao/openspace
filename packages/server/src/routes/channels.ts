@@ -109,6 +109,8 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     const query = req.query as { limit?: string; before?: string; parent_id?: string };
     const limit = query.limit ? Math.min(200, Number(query.limit)) : 50;
 
+    messageRepo.clearStaleStreamingInChannel(ctx.db, id);
+
     if (query.parent_id) {
       return messageRepo.listThread(ctx.db, query.parent_id);
     }

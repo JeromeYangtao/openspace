@@ -75,6 +75,7 @@ export function Message({
   const displayText = isStreaming
     ? (streamingText ?? message.content)
     : message.content || streamingText || '';
+  const showGeneratingPlaceholder = isStreaming && activityRows.length === 0;
 
   const displayName = message.sender_type === 'agent' ? (agent?.name ?? 'Agent') : 'You';
 
@@ -130,7 +131,7 @@ export function Message({
           <AgentActivityPanel rows={activityRows} isStreaming={isStreaming} />
         )}
 
-        <MessageContent content={displayText} isStreaming={isStreaming} />
+        <MessageContent content={displayText} isStreaming={showGeneratingPlaceholder} />
 
         {approvalRows.length > 0 && (
           <div className="mt-2 space-y-2">

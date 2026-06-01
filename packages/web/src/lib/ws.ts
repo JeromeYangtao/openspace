@@ -19,8 +19,10 @@ class WSClient {
   private statusListeners = new Set<(s: 'connecting' | 'open' | 'closed') => void>();
   private channelSubscriptions = new Set<string>();
   private pendingMessages: Extract<ClientEvent, { type: 'send_message' }>[] = [];
+  private reconnectEnabled = true;
 
   connect(): void {
+    this.reconnectEnabled = true;
     if (
       this.ws &&
       (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
@@ -42,7 +44,9 @@ class WSClient {
 
     ws.onclose = () => {
       this.setStatus('closed');
-      this.scheduleReconnect();
+      if (this.reconnectEnabled) {
+        this.scheduleReconnect();
+      }
     };
 
     ws.onerror = () => {
@@ -138,6 +142,7 @@ class WSClient {
   }
 
   private scheduleReconnect() {
+    if (!this.reconnectEnabled) return;
     if (this.reconnectTimer) return;
     const delay = Math.min(30_000, 1000 * 2 ** this.reconnectAttempts);
     this.reconnectAttempts += 1;
@@ -147,13 +152,16 @@ class WSClient {
     }, delay);
   }
 
-  close() {
+  close(opts: { reconnect?: boolean } = {}) {
+    this.reconnectEnabled = opts.reconnect ?? false;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    this.pendingMessages = [];
     this.ws?.close();
     this.ws = null;
+    this.setStatus('closed');
   }
 }
 

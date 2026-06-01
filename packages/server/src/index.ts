@@ -26,12 +26,15 @@ import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
 import { config } from './config.js';
 import { closeAllDbs, openProjectDb } from './db/index.js';
+import { closeAuthDb, openAuthDb } from './auth/db.js';
+import { requireAuth } from './auth/middleware.js';
 import { runStartupCheck } from './db/seed.js';
 import { workflowRepo } from './db/repos.js';
 import { importBuiltinsForProject } from './workflows/builtin-import.js';
 import { deriveResponsibilitiesForWorkflow } from './workflows/derive-responsibilities.js';
 import { startEvaluatorScheduler } from './system-agents/evaluator.js';
 import { channelRoutes } from './routes/channels.js';
+import { authRoutes } from './routes/auth.js';
 import { agentApprovalRoutes } from './routes/agent-approvals.js';
 import { agentRoutes } from './routes/agents.js';
 import { taskRoutes } from './routes/tasks.js';
@@ -91,6 +94,8 @@ async function main() {
   });
 
   await app.register(websocket);
+  openAuthDb();
+  app.addHook('preHandler', requireAuth);
 
   // D-21：启动期不再有"中央 db"。仅打印 recent projects 状态。
   await runStartupCheck({
@@ -163,6 +168,7 @@ async function main() {
     run_worker: snapshotRunWorker(),
   }));
 
+  await authRoutes(app);
   await runtimesRoutes(app);
   await settingsRoutes(app);
   await projectRoutes(app);
@@ -204,6 +210,7 @@ async function main() {
     const onShutdown = () => {
       app.log.info('shutting down...');
       stopRunWorker();
+      closeAuthDb();
       closeAllDbs();
       app.close().then(() => process.exit(0));
     };

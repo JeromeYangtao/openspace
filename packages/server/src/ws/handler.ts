@@ -8,10 +8,21 @@ import type { ClientEvent, ServerEvent } from '@openspace/shared';
 import { routeUserMessage } from '../messaging/router.js';
 import { hub } from './hub.js';
 import { dbForResource } from '../routes/_helpers.js';
+import { getUserFromRequest } from '../auth/session.js';
+import { config } from '../config.js';
 
 export function registerWSRoute(app: FastifyInstance): void {
   app.register(async (fastify) => {
-    fastify.get('/ws', { websocket: true }, (socket: WebSocket) => {
+    fastify.get('/ws', { websocket: true }, (socket: WebSocket, req) => {
+      if (!isAllowedOrigin(req.headers.origin, req.headers.host)) {
+        socket.close(1008, 'forbidden origin');
+        return;
+      }
+      const user = getUserFromRequest(req);
+      if (!user) {
+        socket.close(1008, 'unauthorized');
+        return;
+      }
       app.log.info('ws client connected');
       hub.register(socket);
 
@@ -45,6 +56,19 @@ export function registerWSRoute(app: FastifyInstance): void {
       });
     });
   });
+}
+
+function isAllowedOrigin(origin: string | undefined, host: string | undefined): boolean {
+  if (!origin) return true;
+  const allowed = new Set<string>();
+  if (host) {
+    allowed.add(`http://${host}`);
+    allowed.add(`https://${host}`);
+  }
+  if (config.webOrigin) {
+    allowed.add(config.webOrigin);
+  }
+  return allowed.has(origin);
 }
 
 async function handleClientEvent(

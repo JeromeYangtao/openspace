@@ -27,6 +27,7 @@ import {
 import { useChannelsStore } from './stores/channels';
 import { useAgentsStore } from './stores/agents';
 import { useApprovalsStore } from './stores/approvals';
+import { useAuthStore } from './stores/auth';
 import { useProjectsStore } from './stores/projects';
 import { initWSBridge } from './stores/ws-bridge';
 import { wsClient } from './lib/ws';
@@ -43,9 +44,35 @@ import { IntelligencePage } from './pages/IntelligencePage';
 import { SavedPage } from './pages/SavedPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
+import { AuthPage } from './pages/AuthPage';
 import { channelPath, dmPath } from './lib/routes';
 
 export function App() {
+  const authLoading = useAuthStore((s) => s.loading);
+  const user = useAuthStore((s) => s.user);
+  const bootstrapRequired = useAuthStore((s) => s.bootstrapRequired);
+  const refreshAuth = useAuthStore((s) => s.refresh);
+
+  useEffect(() => {
+    void refreshAuth();
+  }, [refreshAuth]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-bg-main flex items-center justify-center text-text-secondary font-mono">
+        Loading…
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthPage mode={bootstrapRequired ? 'bootstrap' : 'login'} />;
+  }
+
+  return <AuthenticatedApp />;
+}
+
+function AuthenticatedApp() {
   const refreshChannels = useChannelsStore((s) => s.refresh);
   const refreshAgents = useAgentsStore((s) => s.refresh);
   const refreshActiveRuns = useAgentsStore((s) => s.refreshActiveRuns);

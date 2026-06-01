@@ -17,9 +17,14 @@ class WSClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private status: 'connecting' | 'open' | 'closed' = 'closed';
   private statusListeners = new Set<(s: 'connecting' | 'open' | 'closed') => void>();
+  private channelSubscriptions = new Set<string>();
+  private pendingMessages: Extract<ClientEvent, { type: 'send_message' }>[] = [];
 
   connect(): void {
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
     this.setStatus('connecting');
@@ -31,6 +36,8 @@ class WSClient {
     ws.onopen = () => {
       this.reconnectAttempts = 0;
       this.setStatus('open');
+      this.restoreSubscriptions();
+      this.flushPendingMessages();
     };
 
     ws.onclose = () => {
@@ -60,12 +67,53 @@ class WSClient {
   }
 
   send(event: ClientEvent): boolean {
+    if (event.type === 'subscribe_channel') {
+      this.channelSubscriptions.add(event.channel_id);
+      if (this.ws?.readyState !== WebSocket.OPEN) {
+        this.connect();
+        return true;
+      }
+      return this.sendNow(event);
+    }
+
+    if (event.type === 'unsubscribe_channel') {
+      this.channelSubscriptions.delete(event.channel_id);
+      if (this.ws?.readyState !== WebSocket.OPEN) return true;
+      return this.sendNow(event);
+    }
+
+    if (event.type === 'send_message' && this.ws?.readyState !== WebSocket.OPEN) {
+      this.pendingMessages.push(event);
+      this.connect();
+      return true;
+    }
+
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    return this.sendNow(event);
+  }
+
+  private sendNow(event: ClientEvent): boolean {
     if (this.ws?.readyState !== WebSocket.OPEN) return false;
     try {
       this.ws.send(JSON.stringify(event));
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private restoreSubscriptions() {
+    for (const channelId of this.channelSubscriptions) {
+      this.sendNow({ type: 'subscribe_channel', channel_id: channelId });
+    }
+  }
+
+  private flushPendingMessages() {
+    if (this.pendingMessages.length === 0) return;
+    const pending = this.pendingMessages;
+    this.pendingMessages = [];
+    for (const event of pending) {
+      this.sendNow(event);
     }
   }
 

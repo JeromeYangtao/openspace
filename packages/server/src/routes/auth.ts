@@ -5,6 +5,7 @@ import { hashPassword, verifyPassword } from '../auth/password.js';
 import {
   clearSessionCookie,
   countUsers,
+  countUsersInDb,
   createSession,
   deleteOtherSessions,
   deleteSessionByToken,
@@ -50,7 +51,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const db = openAuthDb();
     const passwordHash = await hashPassword(password);
     const result = db.transaction(() => {
-      if (countUsers(db) > 0) return null;
+      if (countUsersInDb(db) > 0) return null;
       const now = Date.now();
       const id = nanoid();
       db.prepare(
@@ -135,7 +136,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       user.id,
     );
     const token = sessionTokenFromRequest(req);
-    if (token) deleteOtherSessions(user.id, token, db);
+    if (token) deleteOtherSessions(user.id, token);
     return { ok: true };
   });
 }

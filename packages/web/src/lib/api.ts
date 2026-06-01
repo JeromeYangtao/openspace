@@ -6,6 +6,7 @@ import type {
   Agent,
   AgentActivity,
   AgentFeedback,
+  AgentRun,
   AgentSkill,
   ChatMessage,
   Channel,
@@ -160,6 +161,8 @@ export const listAgents = (projectId?: string) => {
   const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
   return request<Agent[]>(`/api/agents${qs}`);
 };
+export const listActiveAgentRuns = () =>
+  request<(AgentRun & { project_id: string })[]>('/api/agent-runs/active');
 export const getAgent = (id: string) => request<Agent>(`/api/agents/${id}`);
 export const createAgent = (data: {
   name: string;

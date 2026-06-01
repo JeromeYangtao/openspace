@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Agent, AgentRunStatus, AgentStatus } from '@openspace/shared';
-import { listAgents } from '../lib/api';
+import { listActiveAgentRuns, listAgents } from '../lib/api';
 
 /**
  * Agents store
@@ -36,6 +36,7 @@ interface AgentsState {
   runStartedAtByAgentChannel: Map<string, Map<string, number>>;
 
   refresh: () => Promise<void>;
+  refreshActiveRuns: () => Promise<void>;
   upsert: (agent: Agent) => void;
   remove: (id: string) => void;
   setChannelRunStatus: (agentId: string, channelId: string, status: AgentRunStatus) => void;
@@ -62,6 +63,28 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
   refresh: async () => {
     const agents = await listAgents();
     set({ agents, loaded: true });
+  },
+  refreshActiveRuns: async () => {
+    const runs = await listActiveAgentRuns();
+    const nextMap = new Map<string, Map<string, AgentRunStatus>>();
+    const nextStart = new Map<string, Map<string, number>>();
+
+    for (const run of runs) {
+      const inner = new Map(nextMap.get(run.agent_id) ?? new Map<string, AgentRunStatus>());
+      inner.set(run.channel_id, run.status);
+      nextMap.set(run.agent_id, inner);
+
+      if (run.status === 'thinking' || run.status === 'working') {
+        const innerStart = new Map(nextStart.get(run.agent_id) ?? new Map<string, number>());
+        innerStart.set(run.channel_id, run.started_at);
+        nextStart.set(run.agent_id, innerStart);
+      }
+    }
+
+    set({
+      runByAgentChannel: nextMap,
+      runStartedAtByAgentChannel: nextStart,
+    });
   },
   upsert: (agent) =>
     set((s) => {

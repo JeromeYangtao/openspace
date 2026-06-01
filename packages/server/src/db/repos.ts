@@ -411,6 +411,38 @@ export const messageRepo = {
     return row ? rowToMessage(row) : null;
   },
 
+  clearStaleStreamingInChannel(db: Database, channelId: string): number {
+    const rows = db
+      .prepare(
+        `SELECT * FROM messages
+         WHERE channel_id = ?
+           AND sender_type = 'agent'
+           AND metadata_json LIKE '%"streaming":true%'`,
+      )
+      .all(channelId) as MessageRow[];
+
+    let updated = 0;
+    for (const row of rows) {
+      const message = rowToMessage(row);
+      if (!message.metadata?.streaming || !message.sender_id) continue;
+      const activeRun = agentRunRepo.getActive(db, message.sender_id, channelId);
+      if (activeRun) continue;
+
+      const metadata: MessageMetadata = {
+        ...message.metadata,
+        streaming: false,
+      };
+      const content = message.content || 'Agent run was interrupted before producing a response.';
+      db.prepare('UPDATE messages SET content = ?, metadata_json = ? WHERE id = ?').run(
+        content,
+        JSON.stringify(metadata),
+        message.id,
+      );
+      updated += 1;
+    }
+    return updated;
+  },
+
   create(
     db: Database,
     input: {

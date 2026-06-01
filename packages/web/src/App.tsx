@@ -47,6 +47,7 @@ import { channelPath, dmPath } from './lib/routes';
 export function App() {
   const refreshChannels = useChannelsStore((s) => s.refresh);
   const refreshAgents = useAgentsStore((s) => s.refresh);
+  const refreshActiveRuns = useAgentsStore((s) => s.refreshActiveRuns);
   const refreshProjects = useProjectsStore((s) => s.refresh);
 
   useEffect(() => {
@@ -55,7 +56,13 @@ export function App() {
     void refreshProjects();
     void refreshChannels();
     void refreshAgents();
-  }, [refreshProjects, refreshChannels, refreshAgents]);
+    void refreshActiveRuns();
+    return wsClient.onStatus((status) => {
+      if (status === 'open') {
+        void refreshActiveRuns();
+      }
+    });
+  }, [refreshProjects, refreshChannels, refreshAgents, refreshActiveRuns]);
 
   return (
     <BrowserRouter>

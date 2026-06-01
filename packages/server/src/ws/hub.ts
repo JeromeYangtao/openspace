@@ -10,6 +10,7 @@ import type { WebSocket } from 'ws';
 import type { ServerEvent } from '@openspace/shared';
 
 class WSHub {
+  private sockets = new Set<WebSocket>();
   private channelSubs = new Map<string, Set<WebSocket>>();
   private socketSubs = new WeakMap<WebSocket, Set<string>>();
   private socketCount = 0;
@@ -38,12 +39,14 @@ class WSHub {
   /** 连接注册（仅用于统计与 disconnect 清理） */
   register(socket: WebSocket): void {
     this.socketCount += 1;
+    this.sockets.add(socket);
     this.socketSubs.set(socket, new Set());
   }
 
   /** 连接断开时清理所有订阅 */
   dispose(socket: WebSocket): void {
     this.socketCount -= 1;
+    this.sockets.delete(socket);
     const chs = this.socketSubs.get(socket);
     if (chs) {
       for (const ch of chs) {
@@ -76,11 +79,7 @@ class WSHub {
    */
   broadcastGlobal(event: ServerEvent): void {
     const payload = JSON.stringify(event);
-    const sockets = new Set<WebSocket>();
-    for (const subs of this.channelSubs.values()) {
-      for (const s of subs) sockets.add(s);
-    }
-    for (const s of sockets) {
+    for (const s of this.sockets) {
       if (s.readyState === 1) {
         try {
           s.send(payload);

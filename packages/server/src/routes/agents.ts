@@ -22,6 +22,12 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     );
   });
 
+  app.get('/api/agent-runs/active', async () => {
+    return forEachProjectDb(({ db, projectId }) =>
+      agentRunRepo.listActive(db).map((run) => ({ ...run, project_id: projectId })),
+    );
+  });
+
   // 创建 agent（必须带 project_id）
   app.post('/api/agents', async (req, reply) => {
     const body = req.body as {

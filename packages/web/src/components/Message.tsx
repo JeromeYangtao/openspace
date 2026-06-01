@@ -13,6 +13,8 @@ import type {
 } from '@openspace/shared';
 import { cn } from '../lib/cn';
 import { decideAgentApproval, isMessageSaved, saveMessage, unsaveMessage } from '../lib/api';
+import type { ApprovalResolution } from '../stores/approvals';
+import { useApprovalsStore } from '../stores/approvals';
 import { Avatar } from './Avatar';
 import { MessageContent } from './MessageContent';
 
@@ -62,10 +64,7 @@ export function Message({
     () => (activityEvents ? compactActivityEvents(activityEvents.map((e) => e.event)) : []),
     [activityEvents],
   );
-  const approvalRows = useMemo(
-    () => activityRows.filter((row) => row.kind === 'approval'),
-    [activityRows],
-  );
+  const approvalRows = useMemo(() => compactApprovalRows(activityRows), [activityRows]);
 
   if (message.sender_type === 'system') {
     return <SystemMessage message={message} />;
@@ -322,6 +321,22 @@ function compactActivityEvents(events: AgentActivityPayload[]): ActivityRow[] {
   return rows.slice(-80);
 }
 
+function compactApprovalRows(rows: ActivityRow[]): ActivityRow[] {
+  const approvals = rows.filter((row) => row.kind === 'approval');
+  const seen = new Set<string>();
+  const result: ActivityRow[] = [];
+
+  for (let i = approvals.length - 1; i >= 0; i -= 1) {
+    const row = approvals[i]!;
+    const key = row.callId ?? `${row.text}-${i}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.unshift(row);
+  }
+
+  return result;
+}
+
 function formatArgs(args: Record<string, unknown>): string {
   try {
     return JSON.stringify(args).slice(0, 160);
@@ -351,9 +366,8 @@ function ApprovalRequestRow({
   const [pendingDecision, setPendingDecision] = useState<
     'approve' | 'approve_for_session' | 'reject' | null
   >(null);
-  const [resolved, setResolved] = useState<'approved' | 'approved_for_session' | 'rejected' | null>(
-    null,
-  );
+  const resolved = useApprovalsStore((s) => (callId ? s.resolvedById.get(callId) : undefined));
+  const markResolved = useApprovalsStore((s) => s.markResolved);
   const [error, setError] = useState<string | null>(null);
   const [title, ...details] = text.split('\n').filter(Boolean);
   const canDecide = supported !== false && !!callId && !resolved;
@@ -364,15 +378,14 @@ function ApprovalRequestRow({
     setError(null);
     try {
       await decideAgentApproval(callId, decision);
-      setResolved(
-        decision === 'approve'
-          ? 'approved'
-          : decision === 'approve_for_session'
-            ? 'approved_for_session'
-            : 'rejected',
-      );
+      markResolved(callId, resolutionForDecision(decision));
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      if (message.includes('already resolved')) {
+        markResolved(callId, 'resolved');
+      } else {
+        setError(message);
+      }
     } finally {
       setPendingDecision(null);
     }
@@ -448,18 +461,28 @@ function ApprovalRequestRow({
         )}
         {resolved && (
           <span className="text-[10px] font-mono text-black/70">
-            {resolved === 'approved'
-              ? 'Approved'
-              : resolved === 'approved_for_session'
-                ? 'Allowed for session'
-                : 'Rejected'}
-            .
+            {formatApprovalResolution(resolved)}.
           </span>
         )}
       </div>
       {error && <div className="mt-1 text-[10px] font-mono text-accent-red">{error}</div>}
     </div>
   );
+}
+
+function resolutionForDecision(
+  decision: 'approve' | 'approve_for_session' | 'reject',
+): ApprovalResolution {
+  if (decision === 'approve') return 'approved';
+  if (decision === 'approve_for_session') return 'approved_for_session';
+  return 'rejected';
+}
+
+function formatApprovalResolution(resolution: ApprovalResolution): string {
+  if (resolution === 'approved') return 'Approved';
+  if (resolution === 'approved_for_session') return 'Allowed for session';
+  if (resolution === 'rejected') return 'Rejected';
+  return 'Resolved';
 }
 
 function SystemMessage({ message }: { message: ChatMessage }) {

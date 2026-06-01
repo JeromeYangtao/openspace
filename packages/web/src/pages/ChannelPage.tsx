@@ -45,7 +45,14 @@ export function ChannelPage() {
   const messagesLoading = useMessagesStore((s) =>
     channelId ? s.loadingChannels.has(channelId) : false,
   );
+  const loadingOlderMessages = useMessagesStore((s) =>
+    channelId ? s.loadingOlderChannels.has(channelId) : false,
+  );
+  const hasMoreMessages = useMessagesStore((s) =>
+    channelId ? (s.hasMoreByChannel.get(channelId) ?? true) : false,
+  );
   const fetchChannel = useMessagesStore((s) => s.fetchChannel);
+  const fetchBefore = useMessagesStore((s) => s.fetchBefore);
   const showMessagesLoading = messagesLoading && messages.length === 0;
 
   const channel = channels.find((c) => c.id === channelId);
@@ -231,6 +238,13 @@ export function ChannelPage() {
               agentsById={agentsById}
               streamBuffers={streamBuffers}
               activityByMessage={activityByMessage}
+              hasMore={hasMoreMessages}
+              loadingMore={loadingOlderMessages}
+              onLoadMore={
+                channelId
+                  ? (beforeMessageId) => fetchBefore(channelId, beforeMessageId)
+                  : undefined
+              }
               onOpenThread={openThread}
               emptyHint={
                 showMessagesLoading

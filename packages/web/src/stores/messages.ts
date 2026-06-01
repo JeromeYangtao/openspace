@@ -15,8 +15,11 @@ interface MessagesState {
   streamBuffers: Map<string, string>;
   activityByMessage: Map<string, AgentActivityEvent[]>;
   loadingChannels: Set<string>;
+  loadingOlderChannels: Set<string>;
+  hasMoreByChannel: Map<string, boolean>;
 
   fetchChannel: (channelId: string) => Promise<void>;
+  fetchBefore: (channelId: string, beforeMessageId: string) => Promise<void>;
   upsertMessage: (msg: ChatMessage) => void;
   appendDelta: (messageId: string, delta: string) => void;
   appendActivity: (event: AgentActivityEvent) => void;
@@ -31,6 +34,8 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   streamBuffers: new Map(),
   activityByMessage: new Map(),
   loadingChannels: new Set(),
+  loadingOlderChannels: new Set(),
+  hasMoreByChannel: new Map(),
 
   fetchChannel: async (channelId) => {
     if (get().loadingChannels.has(channelId)) return;
@@ -44,15 +49,51 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       set((s) => {
         const next = new Map(s.byChannel);
         next.set(channelId, messages);
+        const hasMore = new Map(s.hasMoreByChannel);
+        hasMore.set(channelId, messages.length >= 20);
         const loading = new Set(s.loadingChannels);
         loading.delete(channelId);
-        return { byChannel: next, loadingChannels: loading };
+        return { byChannel: next, hasMoreByChannel: hasMore, loadingChannels: loading };
       });
     } catch (e) {
       set((s) => {
         const loading = new Set(s.loadingChannels);
         loading.delete(channelId);
         return { loadingChannels: loading };
+      });
+      throw e;
+    }
+  },
+
+  fetchBefore: async (channelId, beforeMessageId) => {
+    if (get().loadingOlderChannels.has(channelId)) return;
+    if (get().hasMoreByChannel.get(channelId) === false) return;
+    set((s) => {
+      const loading = new Set(s.loadingOlderChannels);
+      loading.add(channelId);
+      return { loadingOlderChannels: loading };
+    });
+    try {
+      const older = await getChannelMessages(channelId, { before: beforeMessageId });
+      set((s) => {
+        const next = new Map(s.byChannel);
+        const current = next.get(channelId) ?? [];
+        const currentIds = new Set(current.map((m) => m.id));
+        const uniqueOlder = older.filter((m) => !currentIds.has(m.id));
+        next.set(channelId, [...uniqueOlder, ...current]);
+
+        const hasMore = new Map(s.hasMoreByChannel);
+        hasMore.set(channelId, older.length >= 20);
+
+        const loading = new Set(s.loadingOlderChannels);
+        loading.delete(channelId);
+        return { byChannel: next, hasMoreByChannel: hasMore, loadingOlderChannels: loading };
+      });
+    } catch (e) {
+      set((s) => {
+        const loading = new Set(s.loadingOlderChannels);
+        loading.delete(channelId);
+        return { loadingOlderChannels: loading };
       });
       throw e;
     }

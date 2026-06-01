@@ -107,14 +107,18 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       return { error: 'channel not found' };
     }
     const query = req.query as { limit?: string; before?: string; parent_id?: string };
-    const limit = query.limit ? Math.min(200, Number(query.limit)) : 50;
-
-    messageRepo.clearStaleStreamingInChannel(ctx.db, id);
+    const limit = query.limit ? Math.min(200, Number(query.limit)) : 20;
 
     if (query.parent_id) {
-      return messageRepo.listThread(ctx.db, query.parent_id);
+      return messageRepo.clearStaleStreamingMessages(
+        ctx.db,
+        messageRepo.listThread(ctx.db, query.parent_id),
+      );
     }
-    return messageRepo.listChannelMain(ctx.db, id, limit, query.before);
+    return messageRepo.clearStaleStreamingMessages(
+      ctx.db,
+      messageRepo.listChannelMain(ctx.db, id, limit, query.before),
+    );
   });
 
   // 频道内 agent 列表

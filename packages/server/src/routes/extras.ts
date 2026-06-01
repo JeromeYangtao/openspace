@@ -113,6 +113,25 @@ export async function extraRoutes(app: FastifyInstance): Promise<void> {
     reply.code(204);
   });
 
+  app.post('/api/messages/saved-status', async (req) => {
+    const body = req.body as { ids?: string[] };
+    const ids = Array.from(new Set((body?.ids ?? []).filter(Boolean))).slice(0, 200);
+    const status: Record<string, boolean> = Object.fromEntries(ids.map((id) => [id, false]));
+    if (ids.length === 0) return status;
+
+    const placeholders = ids.map(() => '?').join(',');
+    forEachProjectDb(({ db }) => {
+      const rows = db
+        .prepare(`SELECT message_id FROM saved_messages WHERE message_id IN (${placeholders})`)
+        .all(...ids) as { message_id: string }[];
+      for (const row of rows) {
+        status[row.message_id] = true;
+      }
+      return [];
+    });
+    return status;
+  });
+
   app.get('/api/messages/:id/saved', async (req) => {
     const { id } = req.params as { id: string };
     const ctx = dbForResource('messages', id);

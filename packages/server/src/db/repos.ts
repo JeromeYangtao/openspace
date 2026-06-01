@@ -411,22 +411,12 @@ export const messageRepo = {
     return row ? rowToMessage(row) : null;
   },
 
-  clearStaleStreamingInChannel(db: Database, channelId: string): number {
-    const rows = db
-      .prepare(
-        `SELECT * FROM messages
-         WHERE channel_id = ?
-           AND sender_type = 'agent'
-           AND metadata_json LIKE '%"streaming":true%'`,
-      )
-      .all(channelId) as MessageRow[];
-
-    let updated = 0;
-    for (const row of rows) {
-      const message = rowToMessage(row);
-      if (!message.metadata?.streaming || !message.sender_id) continue;
-      const activeRun = agentRunRepo.getActive(db, message.sender_id, channelId);
-      if (activeRun) continue;
+  clearStaleStreamingMessages(db: Database, messages: ChatMessage[]): ChatMessage[] {
+    let changed = false;
+    const next = messages.map((message) => {
+      if (!message.metadata?.streaming || !message.sender_id) return message;
+      const activeRun = agentRunRepo.getActive(db, message.sender_id, message.channel_id);
+      if (activeRun) return message;
 
       const metadata: MessageMetadata = {
         ...message.metadata,
@@ -438,9 +428,10 @@ export const messageRepo = {
         JSON.stringify(metadata),
         message.id,
       );
-      updated += 1;
-    }
-    return updated;
+      changed = true;
+      return { ...message, content, metadata };
+    });
+    return changed ? next : messages;
   },
 
   create(

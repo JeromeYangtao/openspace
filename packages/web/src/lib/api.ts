@@ -142,10 +142,14 @@ export const createChannel = (data: {
     method: 'POST',
     body: JSON.stringify(data),
   });
-export const getChannelMessages = (id: string, opts?: { parent_id?: string; limit?: number }) => {
+export const getChannelMessages = (
+  id: string,
+  opts?: { parent_id?: string; limit?: number; before?: string },
+) => {
   const qs = new URLSearchParams();
   if (opts?.parent_id) qs.set('parent_id', opts.parent_id);
   if (opts?.limit) qs.set('limit', String(opts.limit));
+  if (opts?.before) qs.set('before', opts.before);
   const q = qs.toString();
   return request<ChatMessage[]>(`/api/channels/${id}/messages${q ? '?' + q : ''}`);
 };
@@ -251,6 +255,12 @@ export const unsaveMessage = (id: string) =>
 
 export const isMessageSaved = (id: string) =>
   request<{ saved: boolean }>(`/api/messages/${id}/saved`);
+
+export const getMessagesSavedStatus = (ids: string[]) =>
+  request<Record<string, boolean>>('/api/messages/saved-status', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
 
 export const listSaved = () => request<ChatMessage[]>('/api/saved');
 

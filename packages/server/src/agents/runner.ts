@@ -3,7 +3,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import { PROCESS_TIMEOUT_MS } from '@openspace/shared';
+import { PROCESS_IDLE_TIMEOUT_MS } from '@openspace/shared';
 import type {
   BuildCommandParams,
   CLIAdapter,
@@ -43,7 +43,7 @@ export async function runCLI(
   spec: SpawnSpec,
   options: RunnerOptions = {},
 ): Promise<RunnerResult> {
-  const timeoutMs = options.timeoutMs ?? PROCESS_TIMEOUT_MS;
+  const idleTimeoutMs = options.timeoutMs ?? PROCESS_IDLE_TIMEOUT_MS;
   const start = Date.now();
 
   return new Promise((resolve) => {
@@ -61,13 +61,27 @@ export async function runCLI(
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    const timeoutHandle = setTimeout(() => {
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    const abortForTimeout = () => {
       timedOut = true;
-      try { child.kill('SIGTERM'); } catch { /* ignore */ }
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        /* ignore */
+      }
       setTimeout(() => {
-        try { child.kill('SIGKILL'); } catch { /* ignore */ }
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          /* ignore */
+        }
       }, 2000);
-    }, timeoutMs);
+    };
+    const resetIdleTimer = () => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      timeoutHandle = setTimeout(abortForTimeout, idleTimeoutMs);
+    };
+    resetIdleTimer();
 
     options.signal?.addEventListener('abort', () => {
       aborted = true;
@@ -87,6 +101,7 @@ export async function runCLI(
     child.stdin?.end();
 
     child.stdout?.on('data', (chunk: Buffer) => {
+      resetIdleTimer();
       stdoutBuf += chunk.toString('utf8');
       let idx: number;
       while ((idx = stdoutBuf.indexOf('\n')) >= 0) {
@@ -119,6 +134,7 @@ export async function runCLI(
     }
 
     child.stderr?.on('data', (chunk: Buffer) => {
+      resetIdleTimer();
       const s = chunk.toString('utf8');
       for (const line of s.split('\n')) {
         const trimmed = line.trim();
@@ -133,7 +149,7 @@ export async function runCLI(
     });
 
     child.on('error', (err) => {
-      clearTimeout(timeoutHandle);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       const errEvent: CLIEvent = {
         type: 'error',
         message: err.message,
@@ -152,7 +168,7 @@ export async function runCLI(
     });
 
     child.on('close', (code) => {
-      clearTimeout(timeoutHandle);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       if (stdoutBuf.trim()) processLine(stdoutBuf);
 
       if (deltaBuffer && !events.some((e) => e.type === 'text.completed')) {
@@ -165,7 +181,7 @@ export async function runCLI(
       if (timedOut) {
         const ev: CLIEvent = {
           type: 'error',
-          message: `Process timed out after ${timeoutMs}ms`,
+          message: `Process timed out after ${idleTimeoutMs}ms without activity`,
           code: 'timeout',
         };
         events.push(ev);

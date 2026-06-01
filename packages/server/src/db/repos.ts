@@ -413,8 +413,10 @@ export const messageRepo = {
 
   clearStaleStreamingMessages(db: Database, messages: ChatMessage[]): ChatMessage[] {
     let changed = false;
+    const staleAfterMs = 60_000;
     const next = messages.map((message) => {
       if (!message.metadata?.streaming || !message.sender_id) return message;
+      if (Date.now() - message.created_at < staleAfterMs) return message;
       const activeRun = agentRunRepo.getActive(db, message.sender_id, message.channel_id);
       if (activeRun) return message;
 

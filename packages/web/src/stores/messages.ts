@@ -10,6 +10,24 @@ import { create } from 'zustand';
 import type { AgentActivityEvent, ChatMessage, MessageMetadata } from '@openspace/shared';
 import { getChannelMessages } from '../lib/api';
 
+function mergeFetchedMessages(
+  fetched: ChatMessage[],
+  current: ChatMessage[],
+  streamBuffers: Map<string, string>,
+): ChatMessage[] {
+  const currentById = new Map(current.map((m) => [m.id, m]));
+  return fetched.map((msg) => {
+    const local = currentById.get(msg.id);
+    const buffered = streamBuffers.get(msg.id);
+    if (!msg.metadata?.streaming) return msg;
+    if (buffered && !msg.content) return { ...msg, content: buffered };
+    if (local?.metadata?.streaming && local.content && !msg.content) {
+      return { ...msg, content: local.content };
+    }
+    return msg;
+  });
+}
+
 interface MessagesState {
   byChannel: Map<string, ChatMessage[]>;
   streamBuffers: Map<string, string>;
@@ -48,7 +66,10 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       const messages = await getChannelMessages(channelId);
       set((s) => {
         const next = new Map(s.byChannel);
-        next.set(channelId, messages);
+        next.set(
+          channelId,
+          mergeFetchedMessages(messages, next.get(channelId) ?? [], s.streamBuffers),
+        );
         const hasMore = new Map(s.hasMoreByChannel);
         hasMore.set(channelId, messages.length >= 10);
         const loading = new Set(s.loadingChannels);
@@ -116,9 +137,24 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
 
   appendDelta: (messageId, delta) =>
     set((s) => {
-      const next = new Map(s.streamBuffers);
-      next.set(messageId, (next.get(messageId) ?? '') + delta);
-      return { streamBuffers: next };
+      const nextBuffers = new Map(s.streamBuffers);
+      const text = (nextBuffers.get(messageId) ?? '') + delta;
+      nextBuffers.set(messageId, text);
+
+      const nextByChannel = new Map(s.byChannel);
+      for (const [chId, msgs] of nextByChannel) {
+        const idx = msgs.findIndex((m) => m.id === messageId);
+        if (idx < 0) continue;
+        const copy = [...msgs];
+        copy[idx] = {
+          ...copy[idx]!,
+          content: text,
+        };
+        nextByChannel.set(chId, copy);
+        break;
+      }
+
+      return { byChannel: nextByChannel, streamBuffers: nextBuffers };
     }),
 
   appendActivity: (event) =>

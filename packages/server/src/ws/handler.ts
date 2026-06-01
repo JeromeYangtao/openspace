@@ -5,7 +5,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import type { ClientEvent, ServerEvent } from '@openspace/shared';
-import { messageRepo } from '../db/repos.js';
 import { routeUserMessage } from '../messaging/router.js';
 import { hub } from './hub.js';
 import { dbForResource } from '../routes/_helpers.js';
@@ -70,11 +69,7 @@ async function handleClientEvent(
         return;
       }
       hub.subscribe(socket, event.channel_id);
-      const history = messageRepo.listChannelMain(ctx.db, event.channel_id, 20);
       send({ type: 'subscribed', channel_id: event.channel_id });
-      for (const msg of history) {
-        send({ type: 'message', message: msg });
-      }
       return;
     }
 

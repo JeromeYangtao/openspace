@@ -47,7 +47,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: async () => {
     await logout();
-    wsClient.close();
+    wsClient.close({ reconnect: false });
     set({ user: null, bootstrapRequired: false });
   },
 }));

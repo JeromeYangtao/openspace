@@ -1,5 +1,4 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Database as DB } from 'better-sqlite3';
 import { createHash, randomBytes } from 'node:crypto';
 import { nanoid } from 'nanoid';
 import { openAuthDb } from './db.js';
@@ -20,7 +19,18 @@ interface SessionUserRow {
   expires_at: number;
 }
 
-export function countUsers(db = openAuthDb()): number {
+interface AuthDb {
+  prepare(sql: string): {
+    get(...params: unknown[]): unknown;
+    run(...params: unknown[]): unknown;
+  };
+}
+
+export function countUsers(): number {
+  return countUsersInDb(openAuthDb());
+}
+
+export function countUsersInDb(db: AuthDb): number {
   const row = db.prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number };
   return row.count;
 }
@@ -89,7 +99,11 @@ export function sessionTokenFromRequest(req: FastifyRequest): string | null {
   return cookies[COOKIE_NAME] ?? null;
 }
 
-export function getUserFromToken(token: string, db = openAuthDb()): AuthUser | null {
+export function getUserFromToken(token: string): AuthUser | null {
+  return getUserFromTokenInDb(token, openAuthDb());
+}
+
+function getUserFromTokenInDb(token: string, db: AuthDb): AuthUser | null {
   const tokenHash = hashToken(token);
   const now = Date.now();
   const row = db
@@ -116,7 +130,7 @@ export function getUserFromRequest(req: FastifyRequest): AuthUser | null {
 }
 
 export function createSession(
-  db: DB,
+  db: AuthDb,
   userId: string,
 ): { token: string; expiresAt: number } {
   const now = Date.now();
@@ -146,11 +160,19 @@ export function setSessionCookie(
   );
 }
 
-export function deleteSessionByToken(token: string, db = openAuthDb()): void {
+export function deleteSessionByToken(token: string): void {
+  deleteSessionByTokenInDb(token, openAuthDb());
+}
+
+function deleteSessionByTokenInDb(token: string, db: AuthDb): void {
   db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
 }
 
-export function deleteOtherSessions(userId: string, token: string, db = openAuthDb()): void {
+export function deleteOtherSessions(userId: string, token: string): void {
+  deleteOtherSessionsInDb(userId, token, openAuthDb());
+}
+
+function deleteOtherSessionsInDb(userId: string, token: string, db: AuthDb): void {
   db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?').run(
     userId,
     hashToken(token),

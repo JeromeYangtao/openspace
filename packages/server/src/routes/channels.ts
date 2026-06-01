@@ -107,7 +107,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       return { error: 'channel not found' };
     }
     const query = req.query as { limit?: string; before?: string; parent_id?: string };
-    const limit = query.limit ? Math.min(200, Number(query.limit)) : 20;
+    const limit = query.limit ? Math.min(200, Number(query.limit)) : 10;
 
     if (query.parent_id) {
       return messageRepo.clearStaleStreamingMessages(

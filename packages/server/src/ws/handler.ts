@@ -70,7 +70,7 @@ async function handleClientEvent(
         return;
       }
       hub.subscribe(socket, event.channel_id);
-      const history = messageRepo.listChannelMain(ctx.db, event.channel_id, 20);
+      const history = messageRepo.listChannelMain(ctx.db, event.channel_id, 10);
       send({ type: 'subscribed', channel_id: event.channel_id });
       for (const msg of history) {
         send({ type: 'message', message: msg });

@@ -50,7 +50,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         const next = new Map(s.byChannel);
         next.set(channelId, messages);
         const hasMore = new Map(s.hasMoreByChannel);
-        hasMore.set(channelId, messages.length >= 20);
+        hasMore.set(channelId, messages.length >= 10);
         const loading = new Set(s.loadingChannels);
         loading.delete(channelId);
         return { byChannel: next, hasMoreByChannel: hasMore, loadingChannels: loading };
@@ -83,7 +83,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         next.set(channelId, [...uniqueOlder, ...current]);
 
         const hasMore = new Map(s.hasMoreByChannel);
-        hasMore.set(channelId, older.length >= 20);
+        hasMore.set(channelId, older.length >= 10);
 
         const loading = new Set(s.loadingOlderChannels);
         loading.delete(channelId);

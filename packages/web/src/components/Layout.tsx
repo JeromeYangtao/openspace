@@ -10,6 +10,7 @@ import { CreateChannelDialog } from './CreateChannelDialog';
 import { OpenProjectDialog } from './OpenProjectDialog';
 import { SearchDialog } from './SearchDialog';
 import { AppShell } from './AppShell';
+import { GlobalApprovalBanner } from './GlobalApprovalBanner';
 
 interface Props {
   children: React.ReactNode;
@@ -87,6 +88,7 @@ export function Layout({ children }: Props) {
         />
       )}
     >
+      <GlobalApprovalBanner />
       {children}
       <CreateAgentDialog
         open={createAgentOpen}

@@ -57,7 +57,14 @@ export function Message({
     () => (activityEvents ? compactActivityEvents(activityEvents.map((e) => e.event)) : []),
     [activityEvents],
   );
-  const approvalRows = useMemo(() => compactApprovalRows(activityRows), [activityRows]);
+  const resolvedApprovals = useApprovalsStore((s) => s.resolvedById);
+  const approvalRows = useMemo(
+    () =>
+      compactApprovalRows(activityRows).filter(
+        (row) => !row.callId || !resolvedApprovals.has(row.callId),
+      ),
+    [activityRows, resolvedApprovals],
+  );
 
   if (message.sender_type === 'system') {
     return <SystemMessage message={message} />;
@@ -392,7 +399,7 @@ function ApprovalRequestRow({
           {details.join('\n')}
         </pre>
       )}
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         <button
           type="button"
           disabled={!canDecide || pendingDecision !== null}
@@ -452,11 +459,6 @@ function ApprovalRequestRow({
             Codex exec cannot accept this decision yet.
           </span>
         )}
-        {resolved && (
-          <span className="text-[10px] font-mono text-black/70">
-            {formatApprovalResolution(resolved)}.
-          </span>
-        )}
       </div>
       {error && <div className="mt-1 text-[10px] font-mono text-accent-red">{error}</div>}
     </div>
@@ -469,13 +471,6 @@ function resolutionForDecision(
   if (decision === 'approve') return 'approved';
   if (decision === 'approve_for_session') return 'approved_for_session';
   return 'rejected';
-}
-
-function formatApprovalResolution(resolution: ApprovalResolution): string {
-  if (resolution === 'approved') return 'Approved';
-  if (resolution === 'approved_for_session') return 'Allowed for session';
-  if (resolution === 'rejected') return 'Rejected';
-  return 'Resolved';
 }
 
 function SystemMessage({ message }: { message: ChatMessage }) {

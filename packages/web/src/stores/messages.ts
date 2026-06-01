@@ -84,7 +84,21 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     set((s) => {
       const next = new Map(s.activityByMessage);
       const arr = next.get(event.message_id) ?? [];
-      next.set(event.message_id, [...arr, event].slice(-200));
+      const last = arr[arr.length - 1];
+      if (last?.event.type === 'thinking.delta' && event.event.type === 'thinking.delta') {
+        const copy = [...arr];
+        copy[copy.length - 1] = {
+          ...last,
+          ...event,
+          event: {
+            type: 'thinking.delta',
+            text: last.event.text + event.event.text,
+          },
+        };
+        next.set(event.message_id, copy);
+      } else {
+        next.set(event.message_id, [...arr, event].slice(-200));
+      }
       return { activityByMessage: next };
     }),
 

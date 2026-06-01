@@ -10,67 +10,6 @@ import { useProjectsStore } from './projects';
 import { useWorkflowsStore } from './workflows';
 
 let initialized = false;
-const THINKING_FLUSH_MS = 100;
-const thinkingBuffers = new Map<
-  string,
-  {
-    event: ServerEvent & { type: 'agent_activity' };
-    text: string;
-    timer: ReturnType<typeof setTimeout> | null;
-  }
->();
-
-function flushThinkingBuffer(messageId: string): void {
-  const buffer = thinkingBuffers.get(messageId);
-  if (!buffer) return;
-  if (buffer.timer) clearTimeout(buffer.timer);
-  thinkingBuffers.delete(messageId);
-  if (!buffer.text) return;
-
-  useMessagesStore.getState().appendActivity({
-    ...buffer.event,
-    event: {
-      type: 'thinking.delta',
-      text: buffer.text,
-    },
-  });
-}
-
-function flushAllThinkingBuffers(): void {
-  for (const messageId of Array.from(thinkingBuffers.keys())) {
-    flushThinkingBuffer(messageId);
-  }
-}
-
-function appendCoalescedThinking(event: ServerEvent & { type: 'agent_activity' }): void {
-  if (event.event.type !== 'thinking.delta') return;
-
-  const existing = thinkingBuffers.get(event.message_id);
-  if (existing) {
-    existing.text += event.event.text;
-    existing.event = event;
-    if (shouldFlushThinking(existing.text)) {
-      flushThinkingBuffer(event.message_id);
-    }
-    return;
-  }
-
-  const buffer = {
-    event,
-    text: event.event.text,
-    timer: null as ReturnType<typeof setTimeout> | null,
-  };
-  buffer.timer = setTimeout(() => flushThinkingBuffer(event.message_id), THINKING_FLUSH_MS);
-  thinkingBuffers.set(event.message_id, buffer);
-
-  if (shouldFlushThinking(buffer.text)) {
-    flushThinkingBuffer(event.message_id);
-  }
-}
-
-function shouldFlushThinking(text: string): boolean {
-  return text.length >= 80 || /[\n。！？.!?]\s*$/.test(text);
-}
 
 export function initWSBridge(): void {
   if (initialized) return;
@@ -85,18 +24,12 @@ export function initWSBridge(): void {
         useMessagesStore.getState().appendDelta(event.message_id, event.delta);
         break;
       case 'message_done':
-        flushThinkingBuffer(event.message_id);
         useMessagesStore
           .getState()
           .finalizeMessage(event.message_id, event.final_content, event.metadata);
         break;
       case 'agent_activity':
-        if (event.event.type === 'thinking.delta') {
-          appendCoalescedThinking(event);
-        } else {
-          flushThinkingBuffer(event.message_id);
-          useMessagesStore.getState().appendActivity(event);
-        }
+        useMessagesStore.getState().appendActivity(event);
         break;
       case 'workflow_run_update': {
         // CP4：runner 推进或终止时同步进度条
@@ -118,7 +51,6 @@ export function initWSBridge(): void {
         break;
       }
       case 'project_list_changed': {
-        flushAllThinkingBuffers();
         // D-21 Sprint C：服务端通知 project list 变化（open/close/delete/update）
         void useProjectsStore.getState().refresh();
         break;

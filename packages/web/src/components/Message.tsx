@@ -173,7 +173,7 @@ function AgentActivityPanel({
     ? 'Review and choose an action'
     : isStreaming
       ? hasThinking
-        ? previewThinking(thinking)
+        ? previewThinkingTail(thinking)
         : 'Preparing response'
       : (last?.text ?? 'Completed');
 
@@ -238,10 +238,10 @@ function AgentActivityPanel({
   );
 }
 
-function previewThinking(text: string): string {
+function previewThinkingTail(text: string): string {
   const compact = text.replace(/\s+/g, ' ').trim();
   if (!compact) return 'Working through the problem';
-  return compact.length > 120 ? `${compact.slice(0, 120)}...` : compact;
+  return compact.length > 120 ? `...${compact.slice(-120)}` : compact;
 }
 
 type ActivityRow = {

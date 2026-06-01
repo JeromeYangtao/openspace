@@ -5,7 +5,12 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import type { Agent, AgentActivityEvent, AgentActivityPayload, ChatMessage } from '@openspace/shared';
+import type {
+  Agent,
+  AgentActivityEvent,
+  AgentActivityPayload,
+  ChatMessage,
+} from '@openspace/shared';
 import { cn } from '../lib/cn';
 import { decideAgentApproval, isMessageSaved, saveMessage, unsaveMessage } from '../lib/api';
 import { Avatar } from './Avatar';
@@ -21,7 +26,13 @@ export interface MessageProps {
   onOpenThread?: (rootId: string) => void;
 }
 
-export function Message({ message, agent, streamingText, activityEvents, onOpenThread }: MessageProps) {
+export function Message({
+  message,
+  agent,
+  streamingText,
+  activityEvents,
+  onOpenThread,
+}: MessageProps) {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -53,15 +64,14 @@ export function Message({ message, agent, streamingText, activityEvents, onOpenT
 
   const isStreaming = !!message.metadata?.streaming;
   const displayText = isStreaming
-    ? streamingText ?? message.content
+    ? (streamingText ?? message.content)
     : message.content || streamingText || '';
 
-  const displayName =
-    message.sender_type === 'agent' ? agent?.name ?? 'Agent' : 'You';
+  const displayName = message.sender_type === 'agent' ? (agent?.name ?? 'Agent') : 'You';
 
   const descSnippet =
     message.sender_type === 'agent'
-      ? agent?.description?.split(/[\n。.]/)[0]?.slice(0, 60) ?? ''
+      ? (agent?.description?.split(/[\n。.]/)[0]?.slice(0, 60) ?? '')
       : '';
 
   return (
@@ -94,14 +104,24 @@ export function Message({ message, agent, streamingText, activityEvents, onOpenT
             title={saved ? 'Remove from saved' : 'Save message'}
             aria-label={saved ? 'Remove from saved' : 'Save message'}
           >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill={saved ? 'currentColor' : 'none'}
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
             </svg>
           </button>
         </div>
 
         {message.sender_type === 'agent' && activityEvents && activityEvents.length > 0 && (
-          <AgentActivityPanel events={activityEvents.map((e) => e.event)} isStreaming={isStreaming} />
+          <AgentActivityPanel
+            events={activityEvents.map((e) => e.event)}
+            isStreaming={isStreaming}
+          />
         )}
 
         <MessageContent content={displayText} isStreaming={isStreaming} />
@@ -111,7 +131,14 @@ export function Message({ message, agent, streamingText, activityEvents, onOpenT
             onClick={() => onOpenThread(message.id)}
             className="mt-1 inline-flex items-center gap-1.5 px-2 py-1 bg-accent-cyan border-2 border-black rounded text-xs font-medium hover:bg-accent-teal"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
             {message.reply_count} {message.reply_count === 1 ? 'reply' : 'replies'}
@@ -129,33 +156,58 @@ function AgentActivityPanel({
   events: AgentActivityPayload[];
   isStreaming: boolean;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const rows = useMemo(() => compactActivityEvents(events), [events]);
   if (rows.length === 0) return null;
 
   const last = rows[rows.length - 1];
-  const thinking = rows.filter((r) => r.kind === 'thinking').map((r) => r.text).join('');
+  const thinking = rows
+    .filter((r) => r.kind === 'thinking')
+    .map((r) => r.text)
+    .join('');
   const toolCount = rows.filter((r) => r.kind === 'tool').length;
+  const hasApproval = rows.some((r) => r.kind === 'approval');
+  const hasThinking = thinking.trim().length > 0;
+  const statusLabel = hasApproval ? 'Approval required' : isStreaming ? 'Thinking' : 'Execution';
+  const summary = hasApproval
+    ? 'Review and choose an action'
+    : isStreaming
+      ? hasThinking
+        ? previewThinking(thinking)
+        : 'Preparing response'
+      : (last?.text ?? 'Completed');
+
+  useEffect(() => {
+    if (hasApproval) setExpanded(true);
+  }, [hasApproval]);
 
   return (
-    <div className="my-1.5 border-2 border-black rounded bg-[#eef8ff] text-xs">
+    <div
+      className={cn(
+        'my-1.5 border-2 border-black rounded text-xs',
+        hasApproval ? 'bg-accent-orange/30' : 'bg-[#eef8ff]',
+      )}
+    >
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full min-h-8 px-2 py-1 flex items-center gap-2 text-left font-mono hover:bg-accent-cyan"
+        className={cn(
+          'w-full min-h-8 px-2 py-1 flex items-center gap-2 text-left font-mono',
+          hasApproval ? 'hover:bg-accent-orange/40' : 'hover:bg-accent-cyan',
+        )}
         aria-expanded={expanded}
       >
         <span className="w-4 text-center">{expanded ? '▾' : '▸'}</span>
-        <span className="font-bold">{isStreaming ? 'Thinking' : 'Execution'}</span>
+        <span className="font-bold">{statusLabel}</span>
         <span className="text-text-secondary truncate">
-          {last?.text ?? 'Running'}
+          {summary}
           {toolCount > 0 ? ` · ${toolCount} tool event${toolCount === 1 ? '' : 's'}` : ''}
         </span>
       </button>
       {expanded && (
         <div className="border-t-2 border-black bg-white/70">
-          {thinking && (
-            <pre className="max-h-40 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-[11px] leading-relaxed text-black">
+          {hasThinking && (
+            <pre className="max-h-56 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-[11px] leading-relaxed text-black">
               {thinking}
             </pre>
           )}
@@ -163,10 +215,11 @@ function AgentActivityPanel({
             {rows
               .filter((r) => r.kind !== 'thinking')
               .map((row, idx) => (
-                <div key={`${row.kind}-${idx}`} className="px-3 py-1.5 flex gap-2 font-mono text-[11px]">
-                  <span className={cn('shrink-0 font-bold', rowTone(row.kind))}>
-                    {row.label}
-                  </span>
+                <div
+                  key={`${row.kind}-${idx}`}
+                  className="px-3 py-1.5 flex gap-2 font-mono text-[11px]"
+                >
+                  <span className={cn('shrink-0 font-bold', rowTone(row.kind))}>{row.label}</span>
                   {row.kind === 'approval' ? (
                     <ApprovalRequestRow
                       callId={row.callId}
@@ -183,6 +236,12 @@ function AgentActivityPanel({
       )}
     </div>
   );
+}
+
+function previewThinking(text: string): string {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  if (!compact) return 'Working through the problem';
+  return compact.length > 120 ? `${compact.slice(0, 120)}...` : compact;
 }
 
 type ActivityRow = {
@@ -288,19 +347,29 @@ function ApprovalRequestRow({
   text: string;
   supported?: boolean;
 }) {
-  const [pendingDecision, setPendingDecision] = useState<'approve' | 'reject' | null>(null);
-  const [resolved, setResolved] = useState<'approved' | 'rejected' | null>(null);
+  const [pendingDecision, setPendingDecision] = useState<
+    'approve' | 'approve_for_session' | 'reject' | null
+  >(null);
+  const [resolved, setResolved] = useState<'approved' | 'approved_for_session' | 'rejected' | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [title, ...details] = text.split('\n').filter(Boolean);
   const canDecide = supported !== false && !!callId && !resolved;
 
-  const decide = async (decision: 'approve' | 'reject') => {
+  const decide = async (decision: 'approve' | 'approve_for_session' | 'reject') => {
     if (!callId) return;
     setPendingDecision(decision);
     setError(null);
     try {
       await decideAgentApproval(callId, decision);
-      setResolved(decision === 'approve' ? 'approved' : 'rejected');
+      setResolved(
+        decision === 'approve'
+          ? 'approved'
+          : decision === 'approve_for_session'
+            ? 'approved_for_session'
+            : 'rejected',
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -338,6 +407,24 @@ function ApprovalRequestRow({
         <button
           type="button"
           disabled={!canDecide || pendingDecision !== null}
+          onClick={() => void decide('approve_for_session')}
+          title={
+            supported === false
+              ? 'Codex exec mode cannot receive approval decisions yet'
+              : 'Allow similar Codex requests for this session'
+          }
+          className={cn(
+            'px-2 py-1 border-2 border-black rounded bg-bg-card text-[10px] font-bold',
+            canDecide && pendingDecision === null
+              ? 'hover:bg-accent-green'
+              : 'opacity-60 cursor-not-allowed',
+          )}
+        >
+          {pendingDecision === 'approve_for_session' ? 'Allowing...' : 'Allow for session'}
+        </button>
+        <button
+          type="button"
+          disabled={!canDecide || pendingDecision !== null}
           onClick={() => void decide('reject')}
           title={
             supported === false
@@ -360,7 +447,12 @@ function ApprovalRequestRow({
         )}
         {resolved && (
           <span className="text-[10px] font-mono text-black/70">
-            {resolved === 'approved' ? 'Approved' : 'Rejected'}.
+            {resolved === 'approved'
+              ? 'Approved'
+              : resolved === 'approved_for_session'
+                ? 'Allowed for session'
+                : 'Rejected'}
+            .
           </span>
         )}
       </div>

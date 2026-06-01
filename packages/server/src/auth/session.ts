@@ -49,7 +49,7 @@ export function parseCookies(header: string | undefined): Record<string, string>
 export function cookieHeader(
   name: string,
   value: string,
-  opts: { maxAge?: number; expires?: Date } = {},
+  opts: { maxAge?: number; expires?: Date; secure?: boolean } = {},
 ): string {
   const parts = [
     `${name}=${encodeURIComponent(value)}`,
@@ -59,13 +59,24 @@ export function cookieHeader(
   ];
   if (opts.maxAge !== undefined) parts.push(`Max-Age=${opts.maxAge}`);
   if (opts.expires) parts.push(`Expires=${opts.expires.toUTCString()}`);
+  if (opts.secure) parts.push('Secure');
   return parts.join('; ');
 }
 
-export function clearSessionCookie(reply: FastifyReply): void {
+export function isSecureRequest(req: FastifyRequest): boolean {
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const proto = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+  return proto?.split(',')[0]?.trim() === 'https' || req.protocol === 'https';
+}
+
+export function clearSessionCookie(req: FastifyRequest, reply: FastifyReply): void {
   reply.header(
     'Set-Cookie',
-    cookieHeader(COOKIE_NAME, '', { maxAge: 0, expires: new Date(0) }),
+    cookieHeader(COOKIE_NAME, '', {
+      maxAge: 0,
+      expires: new Date(0),
+      secure: isSecureRequest(req),
+    }),
   );
 }
 
@@ -118,11 +129,20 @@ export function createSession(
   return { token, expiresAt };
 }
 
-export function setSessionCookie(reply: FastifyReply, token: string, expiresAt: number): void {
+export function setSessionCookie(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  token: string,
+  expiresAt: number,
+): void {
   const maxAge = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
   reply.header(
     'Set-Cookie',
-    cookieHeader(COOKIE_NAME, token, { maxAge, expires: new Date(expiresAt) }),
+    cookieHeader(COOKIE_NAME, token, {
+      maxAge,
+      expires: new Date(expiresAt),
+      secure: isSecureRequest(req),
+    }),
   );
 }
 

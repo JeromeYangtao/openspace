@@ -69,7 +69,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return { error: 'bootstrap is closed' };
     }
 
-    setSessionCookie(reply, result.session.token, result.session.expiresAt);
+    setSessionCookie(req, reply, result.session.token, result.session.expiresAt);
     return { user: serializeUser(result.user) };
   });
 
@@ -92,7 +92,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const session = createSession(db, row.id);
-    setSessionCookie(reply, session.token, session.expiresAt);
+    setSessionCookie(req, reply, session.token, session.expiresAt);
     return {
       user: serializeUser({ id: row.id, username: row.username, role: row.role }),
     };
@@ -101,7 +101,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/auth/logout', async (req, reply) => {
     const token = sessionTokenFromRequest(req);
     if (token) deleteSessionByToken(token);
-    clearSessionCookie(reply);
+    clearSessionCookie(req, reply);
     return { ok: true };
   });
 

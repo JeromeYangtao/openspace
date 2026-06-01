@@ -17,7 +17,7 @@ export const CHARS_PER_TOKEN = 4;
 // 并发控制（D-5）
 // =============================================================================
 export const MAX_CONCURRENT_PROCESSES = 3;
-export const PROCESS_TIMEOUT_MS = 300_000; // 5 分钟
+export const PROCESS_IDLE_TIMEOUT_MS = 600_000; // 10 分钟无输出/事件才超时
 export const QUEUE_MAX_SIZE = 20;
 
 // =============================================================================
@@ -40,7 +40,7 @@ export const GOAL_MAX_LENGTH = 500;
 // =============================================================================
 // Team Architect System Agent（D-15 / D-19）
 // =============================================================================
-/** Team Architect spawn 超时（独立于 PROCESS_TIMEOUT_MS） */
+/** Team Architect idle 超时（独立于 PROCESS_IDLE_TIMEOUT_MS） */
 export const TEAM_ARCHITECT_TIMEOUT_MS = 30_000;
 
 /** Scribe spawn 超时（thread 体量较大，给 60s）*/

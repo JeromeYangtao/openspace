@@ -1,6 +1,6 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
-import { PROCESS_TIMEOUT_MS } from '@openspace/shared';
+import { PROCESS_IDLE_TIMEOUT_MS } from '@openspace/shared';
 import {
   cancelApproval,
   registerApproval,
@@ -264,7 +264,7 @@ export class CodexAppServerAdapter implements CLIAdapter {
 
   async runDirect(params: BuildCommandParams, options: RunnerOptions = {}): Promise<RunnerResult> {
     const start = Date.now();
-    const timeoutMs = options.timeoutMs ?? PROCESS_TIMEOUT_MS;
+    const idleTimeoutMs = options.timeoutMs ?? PROCESS_IDLE_TIMEOUT_MS;
     const events: CLIEvent[] = [];
     const pendingApprovalIds = new Set<string>();
     const pendingRequests = new Map<JsonRpcId, {
@@ -281,8 +281,10 @@ export class CodexAppServerAdapter implements CLIAdapter {
     let settled = false;
     let timeoutHandle: NodeJS.Timeout | null = null;
     let child: ChildProcess | null = null;
+    let resetIdleTimer = () => {};
 
     const emit = (event: CLIEvent) => {
+      resetIdleTimer();
       events.push(event);
       if (event.type === 'text.delta') {
         deltaBuffer += event.text;
@@ -333,6 +335,34 @@ export class CodexAppServerAdapter implements CLIAdapter {
     };
 
     return new Promise<RunnerResult>((resolve) => {
+      const abort = (markAborted = true) => {
+        if (markAborted) aborted = true;
+        try {
+          child?.kill('SIGTERM');
+        } catch {
+          /* ignore */
+        }
+        setTimeout(() => {
+          try {
+            child?.kill('SIGKILL');
+          } catch {
+            /* ignore */
+          }
+        }, 2000);
+      };
+
+      resetIdleTimer = () => {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        timeoutHandle = setTimeout(() => {
+          if (pendingApprovalIds.size > 0) {
+            resetIdleTimer();
+            return;
+          }
+          timedOut = true;
+          abort(false);
+        }, idleTimeoutMs);
+      };
+
       const resolveOnce = (result: RunnerResult) => {
         if (settled) return;
         settled = true;
@@ -347,6 +377,7 @@ export class CodexAppServerAdapter implements CLIAdapter {
       };
 
       const handleMessage = (message: JsonRpcMessage) => {
+        resetIdleTimer();
         if (message.id !== undefined && (message.result !== undefined || message.error)) {
           const pending = pendingRequests.get(message.id);
           if (!pending) return;
@@ -402,6 +433,7 @@ export class CodexAppServerAdapter implements CLIAdapter {
           command,
           reason,
           decide: (decision) => {
+            resetIdleTimer();
             pendingApprovalIds.delete(approval.id);
             const result = decisionFor(kind, decision, requestParams);
             if (!result) {
@@ -530,6 +562,7 @@ export class CodexAppServerAdapter implements CLIAdapter {
       });
 
       child.stdout?.on('data', (chunk: Buffer) => {
+        resetIdleTimer();
         stdoutBuf += chunk.toString('utf8');
         let idx: number;
         while ((idx = stdoutBuf.indexOf('\n')) >= 0) {
@@ -550,6 +583,7 @@ export class CodexAppServerAdapter implements CLIAdapter {
       });
 
       child.stderr?.on('data', (chunk: Buffer) => {
+        resetIdleTimer();
         for (const line of chunk.toString('utf8').split('\n')) {
           if (line.trim()) options.onStderr?.(line);
         }
@@ -564,37 +598,20 @@ export class CodexAppServerAdapter implements CLIAdapter {
         if (!settled) {
           emit({
             type: 'error',
-            message: `Codex app-server exited before turn completed${code === null ? '' : ` (${code})`}`,
-            code: 'codex_app_server_exited',
+            message: timedOut
+              ? `Codex app-server timed out after ${idleTimeoutMs}ms without activity`
+              : `Codex app-server exited before turn completed${code === null ? '' : ` (${code})`}`,
+            code: timedOut ? 'timeout' : 'codex_app_server_exited',
           });
           resolveOnce(finish(code));
         }
       });
 
-      const abort = () => {
-        aborted = true;
-        try {
-          child?.kill('SIGTERM');
-        } catch {
-          /* ignore */
-        }
-        setTimeout(() => {
-          try {
-            child?.kill('SIGKILL');
-          } catch {
-            /* ignore */
-          }
-        }, 2000);
-      };
-
-      timeoutHandle = setTimeout(() => {
-        timedOut = true;
-        abort();
-      }, timeoutMs);
+      resetIdleTimer();
 
       if (options.signal) {
         if (options.signal.aborted) abort();
-        else options.signal.addEventListener('abort', abort, { once: true });
+        else options.signal.addEventListener('abort', () => abort(), { once: true });
       }
 
       void (async () => {

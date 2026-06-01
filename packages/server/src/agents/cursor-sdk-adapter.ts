@@ -19,7 +19,7 @@
  *   - docs/cursorsdkadapter.md §S-1 / §S-2
  */
 
-import { PROCESS_TIMEOUT_MS } from '@openspace/shared';
+import { PROCESS_IDLE_TIMEOUT_MS } from '@openspace/shared';
 import type {
   AdapterCapabilities,
   BuildCommandParams,
@@ -158,8 +158,10 @@ export class CursorSdkAdapter implements CLIAdapter {
     let textDelta = '';
     let timedOut = false;
     let aborted = false;
+    let resetIdleTimer = () => {};
 
     const emit = (e: CLIEvent) => {
+      resetIdleTimer();
       events.push(e);
       if (e.type === 'text.delta') {
         textDelta += e.text;
@@ -187,7 +189,7 @@ export class CursorSdkAdapter implements CLIAdapter {
       };
     }
 
-    const timeoutMs = options.timeoutMs ?? PROCESS_TIMEOUT_MS;
+    const idleTimeoutMs = options.timeoutMs ?? PROCESS_IDLE_TIMEOUT_MS;
 
     let sdk: SdkModule;
     try {
@@ -211,6 +213,15 @@ export class CursorSdkAdapter implements CLIAdapter {
     let agent: Awaited<ReturnType<SdkModule['Agent']['create']>> | null = null;
     let timeoutHandle: NodeJS.Timeout | null = null;
     let cancelOnAbort: (() => void) | null = null;
+    let cancelRun: (() => void) | null = null;
+    resetIdleTimer = () => {
+      if (!cancelRun) return;
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        cancelRun?.();
+      }, idleTimeoutMs);
+    };
 
     try {
       // 模型 ID 解析 + auto-fallback：SDK 拒绝的 model 自动重试 'default'，让用户的 agent
@@ -283,13 +294,12 @@ export class CursorSdkAdapter implements CLIAdapter {
       void actualModel;
 
       const run = await agent.send(params.prompt);
-
-      timeoutHandle = setTimeout(() => {
-        timedOut = true;
+      cancelRun = () => {
         run.cancel().catch(() => {
           /* ignore */
         });
-      }, timeoutMs);
+      };
+      resetIdleTimer();
 
       if (options.signal) {
         if (options.signal.aborted) {
@@ -315,6 +325,7 @@ export class CursorSdkAdapter implements CLIAdapter {
 
       try {
         for await (const msg of run.stream()) {
+          resetIdleTimer();
           this.mapSdkMessage(msg, emit, (delta) => {
             assistantBuf += delta;
           });

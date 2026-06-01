@@ -5,6 +5,7 @@
 import type { ServerEvent } from '@openspace/shared';
 import { wsClient } from '../lib/ws';
 import { useAgentsStore } from './agents';
+import { useApprovalsStore } from './approvals';
 import { useMessagesStore } from './messages';
 import { useProjectsStore } from './projects';
 import { useWorkflowsStore } from './workflows';
@@ -30,6 +31,9 @@ export function initWSBridge(): void {
         break;
       case 'agent_activity':
         useMessagesStore.getState().appendActivity(event);
+        if (event.event.type === 'approval.required') {
+          void useApprovalsStore.getState().refreshPending();
+        }
         break;
       case 'workflow_run_update': {
         // CP4：runner 推进或终止时同步进度条

@@ -26,6 +26,7 @@ import {
 } from 'react-router-dom';
 import { useChannelsStore } from './stores/channels';
 import { useAgentsStore } from './stores/agents';
+import { useApprovalsStore } from './stores/approvals';
 import { useProjectsStore } from './stores/projects';
 import { initWSBridge } from './stores/ws-bridge';
 import { wsClient } from './lib/ws';
@@ -48,6 +49,7 @@ export function App() {
   const refreshChannels = useChannelsStore((s) => s.refresh);
   const refreshAgents = useAgentsStore((s) => s.refresh);
   const refreshActiveRuns = useAgentsStore((s) => s.refreshActiveRuns);
+  const refreshApprovals = useApprovalsStore((s) => s.refreshPending);
   const refreshProjects = useProjectsStore((s) => s.refresh);
 
   useEffect(() => {
@@ -57,12 +59,21 @@ export function App() {
     void refreshChannels();
     void refreshAgents();
     void refreshActiveRuns();
-    return wsClient.onStatus((status) => {
+    void refreshApprovals();
+    const approvalsTimer = window.setInterval(() => {
+      void refreshApprovals();
+    }, 5000);
+    const unsubscribeStatus = wsClient.onStatus((status) => {
       if (status === 'open') {
         void refreshActiveRuns();
+        void refreshApprovals();
       }
     });
-  }, [refreshProjects, refreshChannels, refreshAgents, refreshActiveRuns]);
+    return () => {
+      window.clearInterval(approvalsTimer);
+      unsubscribeStatus();
+    };
+  }, [refreshProjects, refreshChannels, refreshAgents, refreshActiveRuns, refreshApprovals]);
 
   return (
     <BrowserRouter>

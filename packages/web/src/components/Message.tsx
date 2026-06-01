@@ -12,7 +12,7 @@ import type {
   ChatMessage,
 } from '@openspace/shared';
 import { cn } from '../lib/cn';
-import { decideAgentApproval, isMessageSaved, saveMessage, unsaveMessage } from '../lib/api';
+import { decideAgentApproval, saveMessage, unsaveMessage } from '../lib/api';
 import type { ApprovalResolution } from '../stores/approvals';
 import { useApprovalsStore } from '../stores/approvals';
 import { Avatar } from './Avatar';
@@ -24,6 +24,7 @@ export interface MessageProps {
   /** 流式中的增量文本（如果有），优先于 message.content 展示 */
   streamingText?: string;
   activityEvents?: AgentActivityEvent[];
+  saved?: boolean;
   /** 是否有 thread reply 已存在；用于显示 "N replies" 按钮 */
   onOpenThread?: (rootId: string) => void;
 }
@@ -33,22 +34,14 @@ export function Message({
   agent,
   streamingText,
   activityEvents,
+  saved: initiallySaved = false,
   onOpenThread,
 }: MessageProps) {
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState(initiallySaved);
 
   useEffect(() => {
-    if (message.sender_type === 'system') return;
-    let cancelled = false;
-    isMessageSaved(message.id)
-      .then((r) => {
-        if (!cancelled) setSaved(r.saved);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [message.id, message.sender_type]);
+    setSaved(initiallySaved);
+  }, [initiallySaved, message.id]);
 
   const toggleSave = async () => {
     if (saved) {

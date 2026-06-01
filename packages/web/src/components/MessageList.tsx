@@ -73,16 +73,19 @@ export function MessageList({
     }
 
     let cancelled = false;
-    void getMessagesSavedStatus(savedStatusIds)
-      .then((status) => {
-        if (!cancelled) setSavedById(status);
-      })
-      .catch(() => {
-        if (!cancelled) setSavedById({});
-      });
+    const timer = window.setTimeout(() => {
+      void getMessagesSavedStatus(savedStatusIds)
+        .then((status) => {
+          if (!cancelled) setSavedById(status);
+        })
+        .catch(() => {
+          if (!cancelled) setSavedById({});
+        });
+    }, 100);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [savedStatusKey]);
 

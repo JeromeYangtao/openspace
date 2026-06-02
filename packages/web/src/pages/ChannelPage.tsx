@@ -53,6 +53,7 @@ export function ChannelPage() {
   );
   const fetchChannel = useMessagesStore((s) => s.fetchChannel);
   const fetchBefore = useMessagesStore((s) => s.fetchBefore);
+  const scheduleChannelRefresh = useMessagesStore((s) => s.scheduleChannelRefresh);
   const showMessagesLoading = messagesLoading && messages.length === 0;
 
   const channel = channels.find((c) => c.id === channelId);
@@ -196,6 +197,7 @@ export function ChannelPage() {
       content,
       as_task: opts?.asTask,
     });
+    scheduleChannelRefresh(channelId, 700);
   };
 
   const handleStopAll = () => setStopAllOpen(true);

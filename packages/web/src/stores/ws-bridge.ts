@@ -31,6 +31,9 @@ export function initWSBridge(): void {
         break;
       case 'agent_activity':
         useMessagesStore.getState().appendActivity(event);
+        if (!useMessagesStore.getState().hasMessage(event.channel_id, event.message_id)) {
+          useMessagesStore.getState().scheduleChannelRefresh(event.channel_id, 200);
+        }
         if (event.event.type === 'approval.required') {
           void useApprovalsStore.getState().refreshPending();
         }
@@ -50,6 +53,7 @@ export function initWSBridge(): void {
             store.clearChannelRun(event.agent_id, event.channel_id);
           } else {
             store.setChannelRunStatus(event.agent_id, event.channel_id, event.status);
+            useMessagesStore.getState().scheduleChannelRefresh(event.channel_id, 500);
           }
         }
         break;

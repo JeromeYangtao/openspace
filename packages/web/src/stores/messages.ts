@@ -28,6 +28,8 @@ function mergeFetchedMessages(
   });
 }
 
+const scheduledChannelRefreshes = new Map<string, ReturnType<typeof setTimeout>>();
+
 interface MessagesState {
   byChannel: Map<string, ChatMessage[]>;
   streamBuffers: Map<string, string>;
@@ -42,6 +44,8 @@ interface MessagesState {
   appendDelta: (messageId: string, delta: string) => void;
   appendActivity: (event: AgentActivityEvent) => void;
   finalizeMessage: (messageId: string, finalContent: string, metadata: MessageMetadata) => void;
+  scheduleChannelRefresh: (channelId: string, delayMs?: number) => void;
+  hasMessage: (channelId: string, messageId: string) => boolean;
 
   getChannelMessages: (channelId: string) => ChatMessage[];
   getStreamingText: (messageId: string) => string | undefined;
@@ -202,6 +206,24 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
 
       return { byChannel: nextByChannel, streamBuffers: nextBuffers };
     }),
+
+  scheduleChannelRefresh: (channelId, delayMs = 500) => {
+    if (scheduledChannelRefreshes.has(channelId)) return;
+    const timer = setTimeout(() => {
+      scheduledChannelRefreshes.delete(channelId);
+      if (get().loadingChannels.has(channelId)) {
+        get().scheduleChannelRefresh(channelId, 800);
+        return;
+      }
+      void get().fetchChannel(channelId).catch(() => {
+        /* best-effort recovery */
+      });
+    }, delayMs);
+    scheduledChannelRefreshes.set(channelId, timer);
+  },
+
+  hasMessage: (channelId, messageId) =>
+    (get().byChannel.get(channelId) ?? []).some((m) => m.id === messageId),
 
   getChannelMessages: (channelId) => get().byChannel.get(channelId) ?? [],
   getStreamingText: (messageId) => get().streamBuffers.get(messageId),

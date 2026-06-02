@@ -321,7 +321,6 @@ export async function triggerAgent(
       .map((e) => ({
         tool: e.tool,
         args: {},
-        result: e.result,
         success: e.success,
         duration_ms: e.duration_ms,
       })),

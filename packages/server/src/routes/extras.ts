@@ -23,16 +23,31 @@ interface RawRow {
 }
 
 function rowToMessage(r: RawRow): ChatMessage {
+  const metadata = r.metadata_json ? (JSON.parse(r.metadata_json) as MessageMetadata) : null;
   return {
     id: r.id,
     channel_id: r.channel_id,
     sender_type: r.sender_type as SenderType,
     sender_id: r.sender_id,
     content: r.content,
-    metadata: r.metadata_json ? (JSON.parse(r.metadata_json) as MessageMetadata) : null,
+    metadata: compactMessageMetadata(metadata),
     parent_id: r.parent_id,
     reply_count: r.reply_count,
     created_at: r.created_at,
+  };
+}
+
+function compactMessageMetadata(metadata: MessageMetadata | null): MessageMetadata | null {
+  if (!metadata?.tool_calls?.length) return metadata;
+  return {
+    ...metadata,
+    tool_calls: metadata.tool_calls.map((call) => {
+      const { result: _result, args: _args, ...rest } = call;
+      return {
+        ...rest,
+        args: {},
+      };
+    }),
   };
 }
 

@@ -367,6 +367,25 @@ function rowToMessage(r: MessageRow): ChatMessage {
   };
 }
 
+function compactMessageForList(message: ChatMessage): ChatMessage {
+  const metadata = compactMessageMetadata(message.metadata);
+  return metadata === message.metadata ? message : { ...message, metadata };
+}
+
+function compactMessageMetadata(metadata: MessageMetadata | null): MessageMetadata | null {
+  if (!metadata?.tool_calls?.length) return metadata;
+  return {
+    ...metadata,
+    tool_calls: metadata.tool_calls.map((call) => {
+      const { result: _result, args: _args, ...rest } = call;
+      return {
+        ...rest,
+        args: {},
+      };
+    }),
+  };
+}
+
 export const messageRepo = {
   /** 查询频道主线消息（parent_id IS NULL），按时间倒序 */
   listChannelMain(
@@ -391,7 +410,7 @@ export const messageRepo = {
              ORDER BY created_at DESC LIMIT ?`,
           )
           .all(channelId, limit) as MessageRow[]);
-    return rows.map(rowToMessage).reverse();
+    return rows.map(rowToMessage).map(compactMessageForList).reverse();
   },
 
   /** 查询 Thread 内所有消息（包括根消息），按时间正序 */
@@ -403,7 +422,7 @@ export const messageRepo = {
     const replies = db
       .prepare('SELECT * FROM messages WHERE parent_id = ? ORDER BY created_at ASC')
       .all(rootMessageId) as MessageRow[];
-    return [rowToMessage(root), ...replies.map(rowToMessage)];
+    return [rowToMessage(root), ...replies.map(rowToMessage)].map(compactMessageForList);
   },
 
   getById(db: Database, id: string): ChatMessage | null {
@@ -433,7 +452,7 @@ export const messageRepo = {
       changed = true;
       return { ...message, content, metadata };
     });
-    return changed ? next : messages;
+    return (changed ? next : messages).map(compactMessageForList);
   },
 
   create(

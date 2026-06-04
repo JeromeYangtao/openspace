@@ -14,6 +14,7 @@ import { NavLink, useSearchParams, useNavigate } from 'react-router-dom';
 import type { Agent, Channel, Project } from '@openspace/shared';
 import { cn } from '../lib/cn';
 import { closeProject } from '../lib/api';
+import { useAuthStore } from '../stores/auth';
 import { useProjectsStore } from '../stores/projects';
 import {
   projectAgentProfilePath,
@@ -57,6 +58,8 @@ export function Sidebar({
   const [params] = useSearchParams();
   const sidebarTab = (params.get('sidebarTab') ?? 'chat') as 'chat' | 'members';
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
+  const displayName = user?.display_name ?? user?.username ?? 'User';
 
   const setTab = (tab: 'chat' | 'members') => {
     const next = new URLSearchParams(params);
@@ -131,9 +134,9 @@ export function Sidebar({
 
       {/* 底部 user zone (本地版简化) */}
       <div className="border-t-2 border-black p-2 flex items-center gap-2 bg-bg-sidebar">
-        <Avatar name="Local" kind="user" size="sm" />
+        <Avatar name={displayName} kind="user" size="sm" />
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-bold">Local User</div>
+          <div className="truncate text-sm font-bold">{displayName}</div>
           <div className="text-[10px] text-text-secondary font-mono truncate">~/.openspace</div>
         </div>
         <NavLink

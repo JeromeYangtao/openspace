@@ -368,7 +368,6 @@ function AdminUsersPanel() {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'admin' | 'member'>('member');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const refreshDirectory = useUsersStore((s) => s.refresh);
@@ -393,12 +392,11 @@ function AdminUsersPanel() {
     setBusy('create');
     setError(null);
     try {
-      const user = await createUser({ username, displayName, password, role });
+      const user = await createUser({ username, displayName, password });
       setUsers((rows) => [...rows, user]);
       setUsername('');
       setDisplayName('');
       setPassword('');
-      setRole('member');
       await refreshDirectory();
     } catch (e) {
       setError((e as Error).message);
@@ -444,7 +442,7 @@ function AdminUsersPanel() {
         </p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto_auto]">
+      <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
         <input
           value={username}
           onChange={(e) => setUsername(e.target.value)}
@@ -464,14 +462,6 @@ function AdminUsersPanel() {
           placeholder="initial password"
           className="rounded border-2 border-black bg-bg-main px-3 py-2 font-mono text-sm focus:bg-white focus:outline-none"
         />
-        <select
-          value={role}
-          onChange={(e) => setRole(e.target.value === 'admin' ? 'admin' : 'member')}
-          className="rounded border-2 border-black bg-bg-main px-3 py-2 text-sm"
-        >
-          <option value="member">member</option>
-          <option value="admin">admin</option>
-        </select>
         <button
           type="button"
           onClick={() => void create()}

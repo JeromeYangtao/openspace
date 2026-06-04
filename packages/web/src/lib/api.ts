@@ -99,7 +99,6 @@ export const createUser = (data: {
   username: string;
   displayName?: string;
   password: string;
-  role: 'admin' | 'member';
 }) =>
   request<AuthUser>('/api/admin/users', {
     method: 'POST',

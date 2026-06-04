@@ -171,12 +171,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       username?: string;
       displayName?: string;
       password?: string;
-      role?: UserRole;
     };
     const username = normalizeUsername(body.username);
     const displayName = normalizeDisplayName(body.displayName) ?? username;
     const password = body.password ?? '';
-    const role = body.role === 'admin' ? 'admin' : 'member';
     const validation = validateCredentials(username, password);
     if (validation) {
       reply.code(400);
@@ -195,13 +193,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       `INSERT INTO users
          (id, username, display_name, password_hash, role, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, username, displayName, await hashPassword(password), role, now, now);
+    ).run(id, username, displayName, await hashPassword(password), 'member', now, now);
     return userToPublic({
       id,
       username,
       display_name: displayName,
       password_hash: '',
-      role,
+      role: 'member',
       disabled_at: null,
       last_login_at: null,
       created_at: now,

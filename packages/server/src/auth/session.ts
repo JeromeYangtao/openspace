@@ -21,6 +21,14 @@ interface SessionUserRow {
   expires_at: number;
 }
 
+interface UserRow {
+  id: string;
+  username: string;
+  display_name: string | null;
+  role: 'admin' | 'member';
+  disabled_at: number | null;
+}
+
 interface AuthDb {
   prepare(sql: string): {
     get(...params: unknown[]): unknown;
@@ -44,6 +52,25 @@ export function serializeUser(user: AuthUser) {
     display_name: user.display_name,
     role: user.role,
   };
+}
+
+export function listEnabledUsersByIds(ids: string[]): AuthUser[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(', ');
+  const rows = openAuthDb()
+    .prepare(
+      `SELECT id, username, display_name, role, disabled_at
+       FROM users
+       WHERE disabled_at IS NULL AND id IN (${placeholders})
+       ORDER BY username ASC`,
+    )
+    .all(...ids) as UserRow[];
+  return rows.map((row) => ({
+    id: row.id,
+    username: row.username,
+    display_name: row.display_name,
+    role: row.role,
+  }));
 }
 
 export function parseCookies(header: string | undefined): Record<string, string> {

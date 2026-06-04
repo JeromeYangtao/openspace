@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMatch } from 'react-router-dom';
 import { useChannelsStore } from '../stores/channels';
 import { useAgentsStore } from '../stores/agents';
+import { useAuthStore } from '../stores/auth';
 import { useProjectsStore } from '../stores/projects';
 import { useWorkflowsStore } from '../stores/workflows';
 import { Sidebar } from './Sidebar';
@@ -18,6 +19,8 @@ interface Props {
 
 export function Layout({ children }: Props) {
   const channels = useChannelsStore((s) => s.channels);
+  const currentUser = useAuthStore((s) => s.user);
+  const isAdmin = currentUser?.role === 'admin';
   const agents = useAgentsStore((s) => s.agents);
   const projects = useProjectsStore((s) => s.projects);
   const currentProjectId = useProjectsStore((s) => s.currentProjectId);
@@ -44,6 +47,7 @@ export function Layout({ children }: Props) {
   // 从 URL 取当前激活项（CP8.1 — Project scope 路由）
   const channelMatch = useMatch('/p/:projectName/channel/:channelId');
   const dmMatch = useMatch('/p/:projectName/dm/:agentId');
+  const userDmMatch = useMatch('/p/:projectName/user-dm/:userId');
 
   const autoJoinChannelId = channelMatch?.params.channelId;
 
@@ -81,8 +85,9 @@ export function Layout({ children }: Props) {
           onCreateProject={() => setCreateProjectOpen(true)}
           currentChannelId={channelMatch?.params.channelId}
           currentDmAgentId={dmMatch?.params.agentId}
+          currentDmUserId={userDmMatch?.params.userId}
           onCreateAgent={() => setCreateAgentOpen(true)}
-          onCreateChannel={() => setCreateChannelOpen(true)}
+          onCreateChannel={isAdmin ? () => setCreateChannelOpen(true) : undefined}
           onOpenSearch={() => setSearchOpen(true)}
           onNavigate={onNavigate}
         />

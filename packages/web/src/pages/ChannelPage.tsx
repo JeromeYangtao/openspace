@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-
 import type { ChatMessage } from '@openspace/shared';
 import { useChannelsStore } from '../stores/channels';
 import { useAgentsStore } from '../stores/agents';
+import { useAuthStore } from '../stores/auth';
 import { useProjectsStore } from '../stores/projects';
 import { useMessagesStore } from '../stores/messages';
 import { wsClient } from '../lib/ws';
@@ -33,6 +34,8 @@ export function ChannelPage() {
   const profileParam = params.get('profile'); // 形如 "agent:{id}"
   const profileAgentId = profileParam?.startsWith('agent:') ? profileParam.slice(6) : null;
   const channels = useChannelsStore((s) => s.channels);
+  const currentUser = useAuthStore((s) => s.user);
+  const isAdmin = currentUser?.role === 'admin';
   const channelsLoaded = useChannelsStore((s) => s.loaded);
   const allAgents = useAgentsStore((s) => s.agents);
   const profileAgent = profileAgentId ? allAgents.find((a) => a.id === profileAgentId) : null;
@@ -226,9 +229,13 @@ export function ChannelPage() {
         <ChannelHeader
           channel={channel}
           memberCount={channelAgents.length + 1}
-          onStopAll={handleStopAll}
-          onEditChannel={() => setSettingsOpen({ open: true, tab: 'settings' })}
-          onManageMembers={() => setSettingsOpen({ open: true, tab: 'members' })}
+          onStopAll={isAdmin ? handleStopAll : undefined}
+          onEditChannel={
+            isAdmin ? () => setSettingsOpen({ open: true, tab: 'settings' }) : undefined
+          }
+          onManageMembers={
+            isAdmin ? () => setSettingsOpen({ open: true, tab: 'members' }) : undefined
+          }
         />
         <ActiveAgentsBanner channelId={channelId} />
         {chatTab === 'tasks' ? (
@@ -284,18 +291,20 @@ export function ChannelPage() {
         onClose={() => setStopAllOpen(false)}
         onConfirm={confirmStopAll}
       />
-      <ChannelSettingsDialog
-        open={settingsOpen.open}
-        channel={channel}
-        initialTab={settingsOpen.tab}
-        onClose={() => setSettingsOpen({ open: false, tab: 'settings' })}
-        onUpdated={(c) => upsertChannel(c)}
-        onDeleted={(id) => {
-          removeChannel(id);
-          // 删除后回到 Project index（自动跳到下一个 channel）
-          navigate(projectIndexPath(projectName));
-        }}
-      />
+      {isAdmin && (
+        <ChannelSettingsDialog
+          open={settingsOpen.open}
+          channel={channel}
+          initialTab={settingsOpen.tab}
+          onClose={() => setSettingsOpen({ open: false, tab: 'settings' })}
+          onUpdated={(c) => upsertChannel(c)}
+          onDeleted={(id) => {
+            removeChannel(id);
+            // 删除后回到 Project index（自动跳到下一个 channel）
+            navigate(projectIndexPath(projectName));
+          }}
+        />
+      )}
     </div>
   );
 }

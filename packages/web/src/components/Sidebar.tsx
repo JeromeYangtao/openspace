@@ -21,6 +21,7 @@ import {
   projectAgentProfilePath,
   projectChannelPath,
   projectDmPath,
+  projectUserDmPath,
   projectIndexPath,
   projectSettingsPath,
 } from '../lib/routes';
@@ -36,6 +37,7 @@ interface Props {
   onCreateProject?: () => void;
   currentChannelId?: string;
   currentDmAgentId?: string;
+  currentDmUserId?: string;
   onCreateChannel?: () => void;
   onCreateAgent?: () => void;
   onOpenSearch?: () => void;
@@ -51,6 +53,7 @@ export function Sidebar({
   onCreateProject,
   currentChannelId,
   currentDmAgentId,
+  currentDmUserId,
   onCreateChannel,
   onCreateAgent,
   onOpenSearch,
@@ -117,9 +120,12 @@ export function Sidebar({
           <ChatTabContent
             channels={channels}
             agents={agents}
+            users={users}
+            currentUserId={user?.id}
             currentProject={currentProject}
             currentChannelId={currentChannelId}
             currentDmAgentId={currentDmAgentId}
+            currentDmUserId={currentDmUserId}
             onCreateChannel={onCreateChannel}
             onOpenSearch={onOpenSearch}
             onNavigate={onNavigate}
@@ -265,24 +271,31 @@ function NavItem({
 function ChatTabContent({
   channels,
   agents,
+  users,
+  currentUserId,
   currentProject,
   currentChannelId,
   currentDmAgentId,
+  currentDmUserId,
   onCreateChannel,
   onOpenSearch,
   onNavigate,
 }: {
   channels: Channel[];
   agents: Agent[];
+  users: AuthUser[];
+  currentUserId?: string;
   currentProject: Project | null;
   currentChannelId?: string;
   currentDmAgentId?: string;
+  currentDmUserId?: string;
   onCreateChannel?: () => void;
   onOpenSearch?: () => void;
   onNavigate?: () => void;
 }) {
   const publicChannels = channels.filter((c) => c.type === 'channel');
   const projectName = currentProject?.name;
+  const dmUsers = users.filter((u) => u.id !== currentUserId);
 
   return (
     <div className="pb-3">
@@ -314,7 +327,27 @@ function ChatTabContent({
       ))}
 
       {/* DIRECT MESSAGES */}
-      <SectionHeader label="DIRECT MESSAGES" count={agents.length} />
+      <SectionHeader label="DIRECT MESSAGES" count={agents.length + dmUsers.length} />
+      {dmUsers.map((user) => {
+        const name = user.display_name ?? user.username;
+        return (
+          <NavItem
+            key={`user-${user.id}`}
+            to={projectName ? projectUserDmPath(projectName, user.id) : '/'}
+            icon={<Avatar name={name} kind="user" size="sm" />}
+            label={
+              <span className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap">
+                <span className="font-medium min-w-0 truncate whitespace-nowrap">{name}</span>
+                <span className="text-[11px] font-mono text-text-secondary truncate whitespace-nowrap">
+                  @{user.username}
+                </span>
+              </span>
+            }
+            active={currentDmUserId === user.id}
+            onNavigate={onNavigate}
+          />
+        );
+      })}
       {agents.map((a) => (
         <NavItem
           key={a.id}
@@ -359,24 +392,27 @@ function MembersTabContent({
       {users.map((user) => {
         const name = user.display_name ?? user.username;
         return (
-          <div
+          <NavItem
             key={user.id}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm"
-            title={`@${user.username}`}
-          >
-            <Avatar name={name} kind="user" size="sm" />
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-medium">{name}</div>
-              <div className="truncate font-mono text-[10px] text-text-secondary">
-                @{user.username}
-              </div>
-            </div>
-            {user.role === 'admin' && (
-              <span className="rounded border border-black px-1 py-0.5 font-mono text-[9px]">
-                admin
+            to={projectName ? projectUserDmPath(projectName, user.id) : '/'}
+            icon={<Avatar name={name} kind="user" size="sm" />}
+            label={
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="font-medium truncate">{name}</span>
+                <span className="text-[11px] font-mono text-text-secondary truncate">
+                  @{user.username}
+                </span>
               </span>
-            )}
-          </div>
+            }
+            rightSlot={
+              user.role === 'admin' ? (
+                <span className="rounded border border-black px-1 py-0.5 font-mono text-[9px]">
+                  admin
+                </span>
+              ) : undefined
+            }
+            onNavigate={onNavigate}
+          />
         );
       })}
       {users.length === 0 && (

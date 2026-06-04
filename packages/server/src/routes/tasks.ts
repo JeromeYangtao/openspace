@@ -5,6 +5,8 @@ import { LOCAL_USER_ID } from '@openspace/shared';
 import { agentRepo, messageRepo, taskRepo } from '../db/repos.js';
 import { hub } from '../ws/hub.js';
 import { dbForResource, forEachProjectDb } from './_helpers.js';
+import { canAccessChannel } from '../auth/channel-access.js';
+import { getUserFromRequest } from '../auth/session.js';
 
 const STATUS_EMOJI: Record<TaskStatus, string> = {
   todo: '📝',
@@ -28,13 +30,18 @@ function getActorName(db: Database, actorId: string): string {
 
 export async function taskRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/tasks', async (req) => {
+    const user = getUserFromRequest(req);
+    if (!user) return [];
     const query = req.query as { channel_id?: string; status?: TaskStatus };
     if (query.channel_id) {
       const ctx = dbForResource('channels', query.channel_id);
       if (!ctx) return [];
+      if (!canAccessChannel(ctx.db, query.channel_id, user)) return [];
       return taskRepo.list(ctx.db, query);
     }
-    return forEachProjectDb(({ db }) => taskRepo.list(db, query));
+    return forEachProjectDb(({ db }) =>
+      taskRepo.list(db, query).filter((task) => canAccessChannel(db, task.channel_id, user)),
+    );
   });
 
   app.post('/api/tasks', async (req, reply) => {
@@ -53,6 +60,11 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, body.channel_id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     const createdBy = body.created_by ?? LOCAL_USER_ID;
     const task = taskRepo.create(ctx.db, {
@@ -98,6 +110,11 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       reply.code(404);
       return { error: 'task not found' };
     }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, t.channel_id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
     return t;
   });
 
@@ -118,6 +135,11 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     if (!before) {
       reply.code(404);
       return { error: 'task not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, before.channel_id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     const task = taskRepo.update(ctx.db, Number(id), body ?? {});
     if (!task) {
@@ -174,10 +196,17 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       return { error: 'task not found' };
     }
     const t = taskRepo.getById(ctx.db, Number(id));
-    taskRepo.remove(ctx.db, Number(id));
-    if (t) {
-      hub.broadcast(t.channel_id, { type: 'task_update', task: { ...t, status: 'done' } });
+    if (!t) {
+      reply.code(404);
+      return { error: 'task not found' };
     }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, t.channel_id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
+    taskRepo.remove(ctx.db, Number(id));
+    hub.broadcast(t.channel_id, { type: 'task_update', task: { ...t, status: 'done' } });
     reply.code(204);
   });
 }

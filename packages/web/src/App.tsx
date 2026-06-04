@@ -10,6 +10,7 @@
  *   /p/:projectName                  Project index（自动跳到第一个 channel）
  *   /p/:projectName/channel/:id      频道
  *   /p/:projectName/dm/:agentId      DM
+ *   /p/:projectName/user-dm/:userId  User DM
  *   /p/:projectName/agent/:agentId   Agent Profile（占位）
  *   /threads / /tasks / /saved       全局视图（跨 Project）
  *   /channel/:id / /dm/:id           旧链接兼容（自动 redirect 到 Project scope）
@@ -38,6 +39,7 @@ import { ProjectIndexPage } from './pages/ProjectIndexPage';
 import { ProjectSettingsPage } from './pages/ProjectSettingsPage';
 import { ChannelPage } from './pages/ChannelPage';
 import { DMPage } from './pages/DMPage';
+import { UserDMPage } from './pages/UserDMPage';
 import { GlobalThreadsPage } from './pages/GlobalThreadsPage';
 import { GlobalTasksPage } from './pages/GlobalTasksPage';
 import { InboxPage } from './pages/InboxPage';
@@ -123,6 +125,7 @@ function AuthenticatedApp() {
             <Route index element={<ProjectIndexPage />} />
             <Route path="channel/:channelId" element={<ChannelPage />} />
             <Route path="dm/:agentId" element={<DMPage />} />
+            <Route path="user-dm/:userId" element={<UserDMPage />} />
             <Route path="agent/:agentId" element={<AgentPlaceholder />} />
             <Route path="workflows" element={<WorkflowsPage />} />
             <Route path="intelligence" element={<IntelligencePage />} />

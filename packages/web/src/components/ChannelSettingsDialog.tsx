@@ -227,6 +227,7 @@ function MembersTab({ channel }: { channel: Channel }) {
     try {
       await joinChannelUser(channel.id, userId);
       await load();
+      notifyChannelAgentsChanged(channel.id);
     } finally {
       setBusy(null);
     }
@@ -237,6 +238,7 @@ function MembersTab({ channel }: { channel: Channel }) {
     try {
       await removeChannelUser(channel.id, userId);
       await load();
+      notifyChannelAgentsChanged(channel.id);
     } finally {
       setBusy(null);
     }

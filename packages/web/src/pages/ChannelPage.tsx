@@ -7,7 +7,7 @@ import { useAuthStore } from '../stores/auth';
 import { useProjectsStore } from '../stores/projects';
 import { useMessagesStore } from '../stores/messages';
 import { wsClient } from '../lib/ws';
-import { getChannelAgents, stopAllAgents } from '../lib/api';
+import { getChannelAgents, getChannelUsers, stopAllAgents } from '../lib/api';
 import { onChannelAgentsChanged } from '../lib/channel-agent-events';
 import { projectChannelPath, projectIndexPath } from '../lib/routes';
 import { useChannelCommands } from '../lib/useChannelCommands';
@@ -88,18 +88,26 @@ export function ChannelPage() {
 
   // 真实 channel-agent 成员（fix: header 右上角人数从全局 11 改为 channel 真实成员数）
   const [channelAgentIds, setChannelAgentIds] = useState<string[]>([]);
+  const [channelUserIds, setChannelUserIds] = useState<string[]>([]);
   useEffect(() => {
     if (!channelId) {
       setChannelAgentIds([]);
+      setChannelUserIds([]);
       return;
     }
     let cancelled = false;
-    void getChannelAgents(channelId)
-      .then((rows) => {
-        if (!cancelled) setChannelAgentIds(rows.map((r) => r.id));
+    void Promise.all([getChannelAgents(channelId), getChannelUsers(channelId)])
+      .then(([agentRows, userRows]) => {
+        if (!cancelled) {
+          setChannelAgentIds(agentRows.map((r) => r.id));
+          setChannelUserIds(userRows.map((r) => r.id));
+        }
       })
       .catch(() => {
-        if (!cancelled) setChannelAgentIds([]);
+        if (!cancelled) {
+          setChannelAgentIds([]);
+          setChannelUserIds([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -109,9 +117,15 @@ export function ChannelPage() {
   useEffect(() => {
     if (!channelId) return;
     return onChannelAgentsChanged(channelId, () => {
-      void getChannelAgents(channelId)
-        .then((rows) => setChannelAgentIds(rows.map((r) => r.id)))
-        .catch(() => setChannelAgentIds([]));
+      void Promise.all([getChannelAgents(channelId), getChannelUsers(channelId)])
+        .then(([agentRows, userRows]) => {
+          setChannelAgentIds(agentRows.map((r) => r.id));
+          setChannelUserIds(userRows.map((r) => r.id));
+        })
+        .catch(() => {
+          setChannelAgentIds([]);
+          setChannelUserIds([]);
+        });
     });
   }, [channelId]);
 
@@ -160,6 +174,7 @@ export function ChannelPage() {
     () => allAgents.filter((a) => channelAgentIdSet.has(a.id)),
     [allAgents, channelAgentIdSet],
   );
+  const canManageChannel = isAdmin || (!!currentUser && channelUserIds.includes(currentUser.id));
   if (!channelId || !projectName) return null;
 
   // 等 channels 加载完再判断 not-found，避免刷新时闪一下错误页
@@ -228,13 +243,13 @@ export function ChannelPage() {
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <ChannelHeader
           channel={channel}
-          memberCount={channelAgents.length + 1}
-          onStopAll={isAdmin ? handleStopAll : undefined}
+          memberCount={channelAgents.length + channelUserIds.length}
+          onStopAll={canManageChannel ? handleStopAll : undefined}
           onEditChannel={
-            isAdmin ? () => setSettingsOpen({ open: true, tab: 'settings' }) : undefined
+            canManageChannel ? () => setSettingsOpen({ open: true, tab: 'settings' }) : undefined
           }
           onManageMembers={
-            isAdmin ? () => setSettingsOpen({ open: true, tab: 'members' }) : undefined
+            canManageChannel ? () => setSettingsOpen({ open: true, tab: 'members' }) : undefined
           }
         />
         <ActiveAgentsBanner channelId={channelId} />
@@ -291,7 +306,7 @@ export function ChannelPage() {
         onClose={() => setStopAllOpen(false)}
         onConfirm={confirmStopAll}
       />
-      {isAdmin && (
+      {canManageChannel && (
         <ChannelSettingsDialog
           open={settingsOpen.open}
           channel={channel}

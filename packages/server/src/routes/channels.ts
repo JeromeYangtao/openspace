@@ -8,7 +8,11 @@ import {
 } from './_helpers.js';
 import { getUserFromRequest, listEnabledUsersByIds } from '../auth/session.js';
 import { openAuthDb } from '../auth/db.js';
-import { canAccessChannel, visibleChannelsForUser } from '../auth/channel-access.js';
+import {
+  canAccessChannel,
+  canManageChannel,
+  visibleChannelsForUser,
+} from '../auth/channel-access.js';
 
 export async function channelRoutes(app: FastifyInstance): Promise<void> {
   // 列出频道；可选 ?project_id= 过滤
@@ -49,14 +53,18 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       reply.code(404);
       return { error: 'project not found' };
     }
+    const user = getUserFromRequest(req);
+    if (!user) {
+      reply.code(401);
+      return { error: 'unauthorized' };
+    }
     const channel = channelRepo.create(ctx.db, {
       id: body.id,
       name: body.name,
       description: body.description ?? null,
       type: body.type ?? 'channel',
     });
-    const user = getUserFromRequest(req);
-    if (user && channel.type === 'channel') {
+    if (channel.type === 'channel') {
       userChannelRepo.addToChannel(ctx.db, channel.id, user.id);
     }
     return { ...channel, project_id: ctx.projectId };
@@ -122,16 +130,16 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
 
   // 更新频道
   app.patch('/api/channels/:id', async (req, reply) => {
-    const user = getUserFromRequest(req);
-    if (user?.role !== 'admin') {
-      reply.code(403);
-      return { error: 'admin required' };
-    }
     const { id } = req.params as { id: string };
     const ctx = dbForResource('channels', id);
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canManageChannel(ctx.db, id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     const body = req.body as { name?: string; description?: string | null };
     const ch = channelRepo.update(ctx.db, id, body ?? {});
@@ -144,16 +152,16 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
 
   // 删除频道
   app.delete('/api/channels/:id', async (req, reply) => {
-    const user = getUserFromRequest(req);
-    if (user?.role !== 'admin') {
-      reply.code(403);
-      return { error: 'admin required' };
-    }
     const { id } = req.params as { id: string };
     const ctx = dbForResource('channels', id);
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canManageChannel(ctx.db, id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     channelRepo.remove(ctx.db, id);
     reply.code(204);
@@ -222,16 +230,16 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
 
   // 加入 user
   app.post('/api/channels/:id/users', async (req, reply) => {
-    const currentUser = getUserFromRequest(req);
-    if (currentUser?.role !== 'admin') {
-      reply.code(403);
-      return { error: 'admin required' };
-    }
     const { id } = req.params as { id: string };
     const ctx = dbForResource('channels', id);
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const currentUser = getUserFromRequest(req);
+    if (!currentUser || !canManageChannel(ctx.db, id, currentUser)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     const { user_id } = req.body as { user_id: string };
     if (!user_id) {
@@ -256,16 +264,16 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
 
   // 移除 user
   app.delete('/api/channels/:id/users/:userId', async (req, reply) => {
-    const currentUser = getUserFromRequest(req);
-    if (currentUser?.role !== 'admin') {
-      reply.code(403);
-      return { error: 'admin required' };
-    }
     const { id, userId } = req.params as { id: string; userId: string };
     const ctx = dbForResource('channels', id);
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const currentUser = getUserFromRequest(req);
+    if (!currentUser || !canManageChannel(ctx.db, id, currentUser)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     userChannelRepo.removeFromChannel(ctx.db, id, userId);
     reply.code(204);
@@ -273,16 +281,16 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
 
   // 加入 agent
   app.post('/api/channels/:id/agents', async (req, reply) => {
-    const currentUser = getUserFromRequest(req);
-    if (currentUser?.role !== 'admin') {
-      reply.code(403);
-      return { error: 'admin required' };
-    }
     const { id } = req.params as { id: string };
     const ctx = dbForResource('channels', id);
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const currentUser = getUserFromRequest(req);
+    if (!currentUser || !canManageChannel(ctx.db, id, currentUser)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     const { agent_id } = req.body as { agent_id: string };
     if (!agent_id) {
@@ -296,16 +304,16 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
 
   // 移除 agent
   app.delete('/api/channels/:id/agents/:agentId', async (req, reply) => {
-    const currentUser = getUserFromRequest(req);
-    if (currentUser?.role !== 'admin') {
-      reply.code(403);
-      return { error: 'admin required' };
-    }
     const { id, agentId } = req.params as { id: string; agentId: string };
     const ctx = dbForResource('channels', id);
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const currentUser = getUserFromRequest(req);
+    if (!currentUser || !canManageChannel(ctx.db, id, currentUser)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     agentRepo.removeFromChannel(ctx.db, id, agentId);
     reply.code(204);
@@ -313,16 +321,16 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
 
   // Stop all agents in channel
   app.post('/api/channels/:id/stop-all', async (req, reply) => {
-    const user = getUserFromRequest(req);
-    if (user?.role !== 'admin') {
-      reply.code(403);
-      return { error: 'admin required' };
-    }
     const { id } = req.params as { id: string };
     const ctx = dbForResource('channels', id);
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canManageChannel(ctx.db, id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     const killed = abortChannelAgentRuns(ctx.db, id);
     return { stopped: killed };

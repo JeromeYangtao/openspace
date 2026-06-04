@@ -9,12 +9,14 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export interface AuthUser {
   id: string;
   username: string;
+  display_name: string | null;
   role: 'admin' | 'member';
 }
 
 interface SessionUserRow {
   id: string;
   username: string;
+  display_name: string | null;
   role: 'admin' | 'member';
   expires_at: number;
 }
@@ -39,6 +41,7 @@ export function serializeUser(user: AuthUser) {
   return {
     id: user.id,
     username: user.username,
+    display_name: user.display_name,
     role: user.role,
   };
 }
@@ -108,10 +111,10 @@ function getUserFromTokenInDb(token: string, db: AuthDb): AuthUser | null {
   const now = Date.now();
   const row = db
     .prepare(
-      `SELECT users.id, users.username, users.role, sessions.expires_at
+      `SELECT users.id, users.username, users.display_name, users.role, sessions.expires_at
        FROM sessions
        JOIN users ON users.id = sessions.user_id
-       WHERE sessions.token_hash = ?`,
+       WHERE sessions.token_hash = ? AND users.disabled_at IS NULL`,
     )
     .get(tokenHash) as SessionUserRow | undefined;
   if (!row) return null;
@@ -120,7 +123,7 @@ function getUserFromTokenInDb(token: string, db: AuthDb): AuthUser | null {
     return null;
   }
   db.prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?').run(now, tokenHash);
-  return { id: row.id, username: row.username, role: row.role };
+  return { id: row.id, username: row.username, display_name: row.display_name, role: row.role };
 }
 
 export function getUserFromRequest(req: FastifyRequest): AuthUser | null {

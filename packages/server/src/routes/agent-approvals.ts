@@ -4,6 +4,7 @@ import {
   resolveApproval,
   type ApprovalDecision,
 } from '../agents/approval-manager.js';
+import { getUserFromRequest } from '../auth/session.js';
 
 const DECISIONS = new Set<ApprovalDecision>([
   'approve',
@@ -18,6 +19,11 @@ export async function agentApprovalRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.post('/api/agent-approvals/:id/decision', async (req, reply) => {
+    const user = getUserFromRequest(req);
+    if (user?.role !== 'admin') {
+      reply.code(403);
+      return { error: 'admin required' };
+    }
     const { id } = req.params as { id: string };
     const body = req.body as { decision?: ApprovalDecision };
     const decision = body?.decision;

@@ -11,8 +11,19 @@
 
 import { useEffect, useState } from 'react';
 import type { CursorBackend, CursorBackendStatus } from '@openspace/shared';
-import { changePassword, getCursorSettings, updateCursorSettings } from '../lib/api';
+import {
+  changePassword,
+  createUser,
+  disableUser,
+  enableUser,
+  getCursorSettings,
+  listAdminUsers,
+  resetUserPassword,
+  updateCursorSettings,
+  type AuthUser,
+} from '../lib/api';
 import { useAuthStore } from '../stores/auth';
+import { useUsersStore } from '../stores/users';
 
 export function SettingsPage() {
   const [status, setStatus] = useState<CursorBackendStatus | null>(null);
@@ -186,6 +197,8 @@ export function SettingsPage() {
           </button>
         </section>
 
+        {user?.role === 'admin' && <AdminUsersPanel />}
+
         {/* Cursor Backend 卡片 */}
         <section className="bg-bg-card border-2 border-black rounded-xl p-6 shadow-[6px_6px_0_0_#000]">
           <div className="flex items-baseline justify-between mb-1">
@@ -346,6 +359,179 @@ function BackendOption({
         </div>
       </div>
     </label>
+  );
+}
+
+function AdminUsersPanel() {
+  const [users, setUsers] = useState<AuthUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'admin' | 'member'>('member');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const refreshDirectory = useUsersStore((s) => s.refresh);
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      setUsers(await listAdminUsers());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function create() {
+    setBusy('create');
+    setError(null);
+    try {
+      const user = await createUser({ username, displayName, password, role });
+      setUsers((rows) => [...rows, user]);
+      setUsername('');
+      setDisplayName('');
+      setPassword('');
+      setRole('member');
+      await refreshDirectory();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggle(user: AuthUser) {
+    setBusy(user.id);
+    setError(null);
+    try {
+      const next = user.disabled_at ? await enableUser(user.id) : await disableUser(user.id);
+      setUsers((rows) => rows.map((row) => (row.id === next.id ? next : row)));
+      await refreshDirectory();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function resetPassword(user: AuthUser) {
+    const nextPassword = window.prompt(`New password for ${user.username}`);
+    if (!nextPassword) return;
+    setBusy(user.id);
+    setError(null);
+    try {
+      await resetUserPassword(user.id, nextPassword);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="bg-bg-card border-2 border-black rounded-xl p-6 shadow-[6px_6px_0_0_#000]">
+      <div className="mb-4">
+        <h2 className="text-lg font-bold">Users</h2>
+        <p className="mt-1 text-sm text-text-secondary">
+          Create accounts for teammates. Registration is disabled.
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto_auto]">
+        <input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="username"
+          className="rounded border-2 border-black bg-bg-main px-3 py-2 font-mono text-sm focus:bg-white focus:outline-none"
+        />
+        <input
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          placeholder="display name"
+          className="rounded border-2 border-black bg-bg-main px-3 py-2 font-mono text-sm focus:bg-white focus:outline-none"
+        />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="initial password"
+          className="rounded border-2 border-black bg-bg-main px-3 py-2 font-mono text-sm focus:bg-white focus:outline-none"
+        />
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value === 'admin' ? 'admin' : 'member')}
+          className="rounded border-2 border-black bg-bg-main px-3 py-2 text-sm"
+        >
+          <option value="member">member</option>
+          <option value="admin">admin</option>
+        </select>
+        <button
+          type="button"
+          onClick={() => void create()}
+          disabled={busy !== null || !username || !password}
+          className="rounded border-2 border-black bg-accent-green px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Create
+        </button>
+      </div>
+
+      {error && <div className="mt-3 font-mono text-xs text-accent-red">{error}</div>}
+
+      <div className="mt-5 divide-y-2 divide-black/10 border-2 border-black bg-bg-main">
+        {loading ? (
+          <div className="p-3 font-mono text-xs text-text-secondary">Loading users...</div>
+        ) : (
+          users.map((row) => (
+            <div key={row.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-bold">{row.display_name ?? row.username}</span>
+                  <span className="font-mono text-xs text-text-secondary">@{row.username}</span>
+                  <span className="rounded border border-black px-1.5 py-0.5 font-mono text-[10px]">
+                    {row.role}
+                  </span>
+                  {row.disabled_at && (
+                    <span className="rounded border border-black bg-accent-red px-1.5 py-0.5 font-mono text-[10px]">
+                      disabled
+                    </span>
+                  )}
+                </div>
+                {row.last_login_at && (
+                  <div className="mt-1 font-mono text-[11px] text-text-secondary">
+                    last login {new Date(row.last_login_at).toLocaleString()}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => void resetPassword(row)}
+                  className="rounded border-2 border-black bg-white px-2 py-1 text-xs font-bold hover:bg-accent-yellow disabled:opacity-60"
+                >
+                  Reset password
+                </button>
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => void toggle(row)}
+                  className="rounded border-2 border-black bg-white px-2 py-1 text-xs font-bold hover:bg-accent-yellow disabled:opacity-60"
+                >
+                  {row.disabled_at ? 'Enable' : 'Disable'}
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
   );
 }
 

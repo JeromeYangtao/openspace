@@ -17,8 +17,11 @@ export function openAuthDb(): DB {
     CREATE TABLE IF NOT EXISTS users (
       id              TEXT PRIMARY KEY,
       username        TEXT NOT NULL UNIQUE,
+      display_name    TEXT,
       password_hash   TEXT NOT NULL,
       role            TEXT NOT NULL CHECK(role IN ('admin','member')),
+      disabled_at     INTEGER,
+      last_login_at   INTEGER,
       created_at      INTEGER NOT NULL,
       updated_at      INTEGER NOT NULL
     );
@@ -36,6 +39,9 @@ export function openAuthDb(): DB {
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
   `);
+  addColumnIfMissing(db, 'users', 'display_name', 'TEXT');
+  addColumnIfMissing(db, 'users', 'disabled_at', 'INTEGER');
+  addColumnIfMissing(db, 'users', 'last_login_at', 'INTEGER');
   authDb = db;
   return db;
 }
@@ -48,4 +54,15 @@ export function closeAuthDb(): void {
     /* ignore */
   }
   authDb = null;
+}
+
+function addColumnIfMissing(db: DB, table: string, column: string, definition: string): void {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (!/duplicate column name/i.test(message)) {
+      throw e;
+    }
+  }
 }

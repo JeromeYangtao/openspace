@@ -13,6 +13,7 @@ import { getChannelAgents, getChannelMessages } from '../lib/api';
 import { onChannelAgentsChanged } from '../lib/channel-agent-events';
 import { useMessagesStore } from '../stores/messages';
 import { useAgentsStore } from '../stores/agents';
+import { useUsersStore } from '../stores/users';
 import { wsClient } from '../lib/ws';
 import { useChannelCommands } from '../lib/useChannelCommands';
 import { ActiveAgentsBanner } from './ActiveAgentsBanner';
@@ -31,6 +32,7 @@ export function ThreadPanel({ channelId }: Props) {
   const agents = useAgentsStore((s) => s.agents);
   const streamBuffers = useMessagesStore((s) => s.streamBuffers);
   const byChannel = useMessagesStore((s) => s.byChannel);
+  const usersById = useUsersStore((s) => s.usersById);
   const upsertMessage = useMessagesStore((s) => s.upsertMessage);
   const finalizeMessage = useMessagesStore((s) => s.finalizeMessage);
   const [rootMessage, setRootMessage] = useState<ChatMessage | null>(null);
@@ -138,10 +140,11 @@ export function ThreadPanel({ channelId }: Props) {
   if (!threadId) return null;
 
   const rootAgent = rootMessage?.sender_id ? agentsById.get(rootMessage.sender_id) : undefined;
+  const rootUser = rootMessage?.sender_id ? usersById.get(rootMessage.sender_id) : undefined;
   const rootLabel = rootMessage
     ? rootMessage.sender_type === 'agent'
       ? `@${rootAgent?.name ?? 'Agent'}`
-      : 'user'
+      : (rootUser?.display_name ?? rootUser?.username ?? 'user')
     : '';
 
   return (
@@ -175,6 +178,7 @@ export function ThreadPanel({ channelId }: Props) {
             <Message
               message={rootMessage}
               agent={rootMessage.sender_id ? agentsById.get(rootMessage.sender_id) : undefined}
+              user={rootMessage.sender_id ? usersById.get(rootMessage.sender_id) : undefined}
               streamingText={streamBuffers.get(rootMessage.id)}
             />
             {threadMessages.length > 0 && (
@@ -187,6 +191,7 @@ export function ThreadPanel({ channelId }: Props) {
                 key={m.id}
                 message={m}
                 agent={m.sender_id ? agentsById.get(m.sender_id) : undefined}
+                user={m.sender_id ? usersById.get(m.sender_id) : undefined}
                 streamingText={streamBuffers.get(m.id)}
               />
             ))}

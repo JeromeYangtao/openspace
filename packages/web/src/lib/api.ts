@@ -66,7 +66,12 @@ export const getRuntimeModels = (id: Runtime) =>
 export interface AuthUser {
   id: string;
   username: string;
+  display_name: string | null;
   role: 'admin' | 'member';
+  disabled_at?: number | null;
+  last_login_at?: number | null;
+  created_at?: number;
+  updated_at?: number;
 }
 
 export const getCurrentUser = () => request<{ user: AuthUser }>('/api/auth/me');
@@ -88,6 +93,35 @@ export const changePassword = (data: { currentPassword: string; newPassword: str
     method: 'POST',
     body: JSON.stringify(data),
   });
+export const listUsers = () => request<AuthUser[]>('/api/users');
+export const listAdminUsers = () => request<AuthUser[]>('/api/admin/users');
+export const createUser = (data: {
+  username: string;
+  displayName?: string;
+  password: string;
+  role: 'admin' | 'member';
+}) =>
+  request<AuthUser>('/api/admin/users', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+export const updateUser = (
+  id: string,
+  data: { displayName?: string | null; role?: 'admin' | 'member' },
+) =>
+  request<AuthUser>(`/api/admin/users/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+export const resetUserPassword = (id: string, password: string) =>
+  request<{ ok: boolean }>(`/api/admin/users/${id}/reset-password`, {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  });
+export const disableUser = (id: string) =>
+  request<AuthUser>(`/api/admin/users/${id}/disable`, { method: 'POST' });
+export const enableUser = (id: string) =>
+  request<AuthUser>(`/api/admin/users/${id}/enable`, { method: 'POST' });
 
 // Cursor backend settings (Sprint 4-ext / S-1 收尾)
 export const getCursorSettings = (validate = false) =>

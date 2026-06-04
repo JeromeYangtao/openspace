@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentActivityEvent, ChatMessage } from '@openspace/shared';
 import { getMessagesSavedStatus } from '../lib/api';
+import { useUsersStore } from '../stores/users';
 import { Message } from './Message';
 
 interface Props {
@@ -40,6 +41,7 @@ export function MessageList({
   );
   const savedStatusKey = savedStatusIds.join(',');
   const [savedById, setSavedById] = useState<Record<string, boolean>>({});
+  const usersById = useUsersStore((s) => s.usersById);
 
   useEffect(() => {
     const newestMessageId = messages[messages.length - 1]?.id ?? null;
@@ -121,6 +123,7 @@ export function MessageList({
           key={m.id}
           message={m}
           agent={m.sender_id ? agentsById.get(m.sender_id) : undefined}
+          user={m.sender_id ? usersById.get(m.sender_id) : undefined}
           streamingText={streamBuffers.get(m.id)}
           activityEvents={activityByMessage.get(m.id)}
           saved={!!savedById[m.id]}

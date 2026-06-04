@@ -41,6 +41,7 @@ import { persistScribeOutput, runScribe } from '../system-agents/scribe.js';
 
 export interface MessageRouterDeps {
   db: Database;
+  userId?: string;
   logger: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void };
 }
 
@@ -62,6 +63,7 @@ export async function routeUserMessage(
 ): Promise<void> {
   const { db, logger } = deps;
   const { channelId, content, threadId, asTask } = input;
+  const senderId = deps.userId ?? LOCAL_USER_ID;
 
   if (!content.trim()) return;
 
@@ -89,7 +91,7 @@ export async function routeUserMessage(
   const userMsg = messageRepo.create(db, {
     channel_id: channelId,
     sender_type: 'user',
-    sender_id: LOCAL_USER_ID,
+    sender_id: senderId,
     content,
     metadata,
     parent_id: threadId ?? null,
@@ -108,6 +110,7 @@ export async function routeUserMessage(
       threadId,
       userMsg,
       cmd,
+      startedBy: senderId,
     });
     if (handled) return;
   }
@@ -122,7 +125,7 @@ export async function routeUserMessage(
       channel_id: channelId,
       title,
       assignee_agent_id: firstMention?.id ?? null,
-      created_by: LOCAL_USER_ID,
+      created_by: senderId,
       source_message_id: userMsg.id,
     });
     const sysContent = `📝 1 new task created: #${task.id} "${task.title}"`;
@@ -370,8 +373,9 @@ async function handleCommand(input: {
   threadId?: string;
   userMsg: ChatMessage;
   cmd: ParsedCommand;
+  startedBy: string;
 }): Promise<boolean> {
-  const { db, logger, channelId, threadId, userMsg, cmd } = input;
+  const { db, logger, channelId, threadId, userMsg, cmd, startedBy } = input;
 
   if (CONTROL_COMMANDS.has(cmd.name)) {
     return handleControlCommand({ db, logger, channelId, threadId, cmd });
@@ -387,7 +391,7 @@ async function handleCommand(input: {
       {
         workflow_id: wf.id,
         channel_id: channelId,
-        started_by: LOCAL_USER_ID,
+        started_by: startedBy,
         trigger_message_id: userMsg.id,
         initial_input: cmd.args || undefined,
       },

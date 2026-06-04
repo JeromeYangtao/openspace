@@ -15,12 +15,15 @@ import { cn } from '../lib/cn';
 import { decideAgentApproval, saveMessage, unsaveMessage } from '../lib/api';
 import type { ApprovalResolution } from '../stores/approvals';
 import { useApprovalsStore } from '../stores/approvals';
+import { useAuthStore } from '../stores/auth';
+import type { AuthUser } from '../lib/api';
 import { Avatar } from './Avatar';
 import { MessageContent } from './MessageContent';
 
 export interface MessageProps {
   message: ChatMessage;
   agent?: Agent;
+  user?: AuthUser;
   /** 流式中的增量文本（如果有），优先于 message.content 展示 */
   streamingText?: string;
   activityEvents?: AgentActivityEvent[];
@@ -32,12 +35,14 @@ export interface MessageProps {
 export function Message({
   message,
   agent,
+  user,
   streamingText,
   activityEvents,
   saved: initiallySaved = false,
   onOpenThread,
 }: MessageProps) {
   const [saved, setSaved] = useState(initiallySaved);
+  const currentUser = useAuthStore((s) => s.user);
 
   useEffect(() => {
     setSaved(initiallySaved);
@@ -76,7 +81,12 @@ export function Message({
     : message.content || streamingText || '';
   const showGeneratingPlaceholder = isStreaming && activityRows.length === 0;
 
-  const displayName = message.sender_type === 'agent' ? (agent?.name ?? 'Agent') : 'You';
+  const displayName =
+    message.sender_type === 'agent'
+      ? (agent?.name ?? 'Agent')
+      : message.sender_id && currentUser?.id === message.sender_id
+        ? 'You'
+        : (user?.display_name ?? user?.username ?? 'User');
 
   const descSnippet =
     message.sender_type === 'agent'
@@ -93,8 +103,8 @@ export function Message({
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 text-sm">
           <span className="font-bold">{displayName}</span>
-          {message.sender_type === 'user' && (
-            <span className="text-[11px] font-mono text-text-secondary">owner</span>
+          {message.sender_type === 'user' && user?.username && displayName !== user.username && (
+            <span className="text-[11px] font-mono text-text-secondary">@{user.username}</span>
           )}
           {descSnippet && (
             <span className="text-[11px] font-mono text-text-secondary truncate max-w-[260px]">

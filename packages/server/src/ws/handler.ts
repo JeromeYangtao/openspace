@@ -36,7 +36,7 @@ export function registerWSRoute(app: FastifyInstance): void {
           send({ type: 'error', code: 'invalid_json', message: 'invalid JSON' });
           return;
         }
-        handleClientEvent(parsed, socket, app, send).catch((err: unknown) => {
+        handleClientEvent(parsed, socket, app, send, user.id).catch((err: unknown) => {
           app.log.error({ err }, 'ws handler error');
           send({
             type: 'error',
@@ -76,6 +76,7 @@ async function handleClientEvent(
   socket: WebSocket,
   app: FastifyInstance,
   send: (e: ServerEvent) => void,
+  userId: string,
 ): Promise<void> {
   switch (event.type) {
     case 'ping':
@@ -120,6 +121,7 @@ async function handleClientEvent(
         },
         {
           db: ctx.db,
+          userId,
           logger: {
             info: (m) => app.log.info(m),
             warn: (m) => app.log.warn(m),

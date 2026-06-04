@@ -29,6 +29,7 @@ import { useAgentsStore } from './stores/agents';
 import { useApprovalsStore } from './stores/approvals';
 import { useAuthStore } from './stores/auth';
 import { useProjectsStore } from './stores/projects';
+import { useUsersStore } from './stores/users';
 import { initWSBridge } from './stores/ws-bridge';
 import { wsClient } from './lib/ws';
 import { Layout } from './components/Layout';
@@ -78,6 +79,7 @@ function AuthenticatedApp() {
   const refreshActiveRuns = useAgentsStore((s) => s.refreshActiveRuns);
   const refreshApprovals = useApprovalsStore((s) => s.refreshPending);
   const refreshProjects = useProjectsStore((s) => s.refresh);
+  const refreshUsers = useUsersStore((s) => s.refresh);
 
   useEffect(() => {
     initWSBridge();
@@ -85,6 +87,7 @@ function AuthenticatedApp() {
     void refreshProjects();
     void refreshChannels();
     void refreshAgents();
+    void refreshUsers();
     void refreshActiveRuns();
     void refreshApprovals();
     const approvalsTimer = window.setInterval(() => {
@@ -100,7 +103,14 @@ function AuthenticatedApp() {
       window.clearInterval(approvalsTimer);
       unsubscribeStatus();
     };
-  }, [refreshProjects, refreshChannels, refreshAgents, refreshActiveRuns, refreshApprovals]);
+  }, [
+    refreshProjects,
+    refreshChannels,
+    refreshAgents,
+    refreshUsers,
+    refreshActiveRuns,
+    refreshApprovals,
+  ]);
 
   return (
     <BrowserRouter>

@@ -226,6 +226,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       values.push(normalizeDisplayName(body.displayName ?? undefined));
     }
     if (body.role === 'admin' || body.role === 'member') {
+      if (row.role === 'admin' && body.role !== row.role) {
+        reply.code(400);
+        return { error: 'admin role cannot be changed' };
+      }
       updates.push('role = ?');
       values.push(body.role);
     }

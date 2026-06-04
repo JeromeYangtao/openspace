@@ -6,8 +6,17 @@ import { useEffect, useState } from 'react';
 import type { Agent, Channel } from '@openspace/shared';
 import { cn } from '../lib/cn';
 import { Dialog } from './Dialog';
-import { getChannelAgents, joinChannel, listAgents } from '../lib/api';
+import {
+  getChannelAgents,
+  getChannelUsers,
+  joinChannel,
+  joinChannelUser,
+  listAgents,
+  removeChannelUser,
+  type AuthUser,
+} from '../lib/api';
 import { notifyChannelAgentsChanged } from '../lib/channel-agent-events';
+import { useUsersStore } from '../stores/users';
 import { Avatar } from './Avatar';
 
 interface Props {
@@ -164,18 +173,22 @@ function SettingsTab({
 function MembersTab({ channel }: { channel: Channel }) {
   const [projectAgents, setProjectAgents] = useState<Agent[]>([]);
   const [channelAgents, setChannelAgents] = useState<Agent[]>([]);
+  const users = useUsersStore((s) => s.users);
+  const [channelUsers, setChannelUsers] = useState<AuthUser[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
 
   // D-13：Agent 跟 Project 走，跨 Project 不互通。
   // OTHER AGENTS 列表只包含当前 channel 所属 Project 内、且未加入此 channel 的 agent。
   // channel.project_id 为 null 时（理论上 v1.0 已无此情况，兼容老 channel）退回到全局列表。
   const load = async () => {
-    const [scoped, inChannel] = await Promise.all([
+    const [scoped, inChannel, usersInChannel] = await Promise.all([
       listAgents(channel.project_id ?? undefined),
       getChannelAgents(channel.id),
+      getChannelUsers(channel.id),
     ]);
     setProjectAgents(scoped);
     setChannelAgents(inChannel);
+    setChannelUsers(usersInChannel);
   };
 
   useEffect(() => {
@@ -184,6 +197,8 @@ function MembersTab({ channel }: { channel: Channel }) {
 
   const memberIds = new Set(channelAgents.map((a) => a.id));
   const nonMembers = projectAgents.filter((a) => !memberIds.has(a.id));
+  const userMemberIds = new Set(channelUsers.map((u) => u.id));
+  const nonMemberUsers = users.filter((u) => !userMemberIds.has(u.id));
 
   const add = async (agentId: string) => {
     setBusy(agentId);
@@ -207,11 +222,99 @@ function MembersTab({ channel }: { channel: Channel }) {
     }
   };
 
+  const addUser = async (userId: string) => {
+    setBusy(`user:${userId}`);
+    try {
+      await joinChannelUser(channel.id, userId);
+      await load();
+      notifyChannelAgentsChanged(channel.id);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const removeUser = async (userId: string) => {
+    setBusy(`user:${userId}`);
+    try {
+      await removeChannelUser(channel.id, userId);
+      await load();
+      notifyChannelAgentsChanged(channel.id);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className="p-5 space-y-5">
       <div>
+        <div className="section-header mb-2">USERS IN THIS CHANNEL ({channelUsers.length})</div>
+        {channelUsers.length === 0 ? (
+          <div className="text-text-secondary font-mono text-sm">No users in this channel.</div>
+        ) : (
+          <ul className="space-y-1.5">
+            {channelUsers.map((user) => {
+              const name = user.display_name ?? user.username;
+              return (
+                <li
+                  key={user.id}
+                  className="flex items-center gap-2 p-2 border-2 border-black rounded bg-bg-card"
+                >
+                  <Avatar name={name} kind="user" size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{name}</div>
+                    <div className="text-[11px] font-mono text-text-secondary truncate">
+                      @{user.username}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => void removeUser(user.id)}
+                    disabled={busy === `user:${user.id}`}
+                    className="px-2 py-1 border-2 border-black rounded bg-bg-card text-xs font-bold hover:bg-accent-red disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {nonMemberUsers.length > 0 && (
+        <div className="border-t-2 border-black/10 pt-4">
+          <div className="section-header mb-2">OTHER USERS ({nonMemberUsers.length})</div>
+          <ul className="space-y-1.5">
+            {nonMemberUsers.map((user) => {
+              const name = user.display_name ?? user.username;
+              return (
+                <li
+                  key={user.id}
+                  className="flex items-center gap-2 p-2 border-2 border-black rounded bg-bg-main"
+                >
+                  <Avatar name={name} kind="user" size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{name}</div>
+                    <div className="text-[11px] font-mono text-text-secondary truncate">
+                      @{user.username}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => void addUser(user.id)}
+                    disabled={busy === `user:${user.id}`}
+                    className="px-2 py-1 border-2 border-black rounded bg-accent-pink text-xs font-bold hover:brightness-105 disabled:opacity-50"
+                  >
+                    + Add
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      <div>
         <div className="section-header mb-2">
-          IN THIS CHANNEL ({channelAgents.length})
+          AGENTS IN THIS CHANNEL ({channelAgents.length})
         </div>
         {channelAgents.length === 0 ? (
           <div className="text-text-secondary font-mono text-sm">No agents in this channel.</div>

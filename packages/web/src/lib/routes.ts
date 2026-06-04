@@ -6,6 +6,7 @@
  *   /p/:projectName                  Project 内 index（自动进入第一个 channel）
  *   /p/:projectName/channel/:id      频道
  *   /p/:projectName/dm/:agentId      DM
+ *   /p/:projectName/user-dm/:userId  User DM
  *   /p/:projectName/agent/:agentId   Agent Profile（占位）
  *   /threads / /tasks / /saved       全局视图（跨 Project）
  *
@@ -27,6 +28,10 @@ export function projectChannelPath(projectName: string, channelId: string): stri
 
 export function projectDmPath(projectName: string, agentId: string): string {
   return `/p/${projectName}/dm/${agentId}`;
+}
+
+export function projectUserDmPath(projectName: string, userId: string): string {
+  return `/p/${projectName}/user-dm/${userId}`;
 }
 
 export function projectAgentProfilePath(projectName: string, agentId: string): string {

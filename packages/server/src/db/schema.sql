@@ -53,6 +53,14 @@ CREATE TABLE IF NOT EXISTS channel_agents (
   PRIMARY KEY (channel_id, agent_id)
 );
 
+-- Global users live in the auth DB, so user_id is intentionally not an FK here.
+CREATE TABLE IF NOT EXISTS channel_users (
+  channel_id      TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  user_id         TEXT NOT NULL,
+  PRIMARY KEY (channel_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_channel_users_user ON channel_users(user_id);
+
 -- =============================================================================
 -- 4. messages
 -- =============================================================================

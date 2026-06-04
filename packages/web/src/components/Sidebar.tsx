@@ -13,13 +13,15 @@ import { createPortal } from 'react-dom';
 import { NavLink, useSearchParams, useNavigate } from 'react-router-dom';
 import type { Agent, Channel, Project } from '@openspace/shared';
 import { cn } from '../lib/cn';
-import { closeProject } from '../lib/api';
+import { closeProject, type AuthUser } from '../lib/api';
 import { useAuthStore } from '../stores/auth';
 import { useProjectsStore } from '../stores/projects';
+import { useUsersStore } from '../stores/users';
 import {
   projectAgentProfilePath,
   projectChannelPath,
   projectDmPath,
+  projectUserDmPath,
   projectIndexPath,
   projectSettingsPath,
 } from '../lib/routes';
@@ -35,6 +37,7 @@ interface Props {
   onCreateProject?: () => void;
   currentChannelId?: string;
   currentDmAgentId?: string;
+  currentDmUserId?: string;
   onCreateChannel?: () => void;
   onCreateAgent?: () => void;
   onOpenSearch?: () => void;
@@ -50,6 +53,7 @@ export function Sidebar({
   onCreateProject,
   currentChannelId,
   currentDmAgentId,
+  currentDmUserId,
   onCreateChannel,
   onCreateAgent,
   onOpenSearch,
@@ -59,6 +63,7 @@ export function Sidebar({
   const sidebarTab = (params.get('sidebarTab') ?? 'chat') as 'chat' | 'members';
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const users = useUsersStore((s) => s.users);
   const displayName = user?.display_name ?? user?.username ?? 'User';
 
   const setTab = (tab: 'chat' | 'members') => {
@@ -115,9 +120,12 @@ export function Sidebar({
           <ChatTabContent
             channels={channels}
             agents={agents}
+            users={users}
+            currentUserId={user?.id}
             currentProject={currentProject}
             currentChannelId={currentChannelId}
             currentDmAgentId={currentDmAgentId}
+            currentDmUserId={currentDmUserId}
             onCreateChannel={onCreateChannel}
             onOpenSearch={onOpenSearch}
             onNavigate={onNavigate}
@@ -125,6 +133,7 @@ export function Sidebar({
         ) : (
           <MembersTabContent
             agents={agents}
+            users={users}
             currentProject={currentProject}
             onCreateAgent={onCreateAgent}
             onNavigate={onNavigate}
@@ -262,24 +271,31 @@ function NavItem({
 function ChatTabContent({
   channels,
   agents,
+  users,
+  currentUserId,
   currentProject,
   currentChannelId,
   currentDmAgentId,
+  currentDmUserId,
   onCreateChannel,
   onOpenSearch,
   onNavigate,
 }: {
   channels: Channel[];
   agents: Agent[];
+  users: AuthUser[];
+  currentUserId?: string;
   currentProject: Project | null;
   currentChannelId?: string;
   currentDmAgentId?: string;
+  currentDmUserId?: string;
   onCreateChannel?: () => void;
   onOpenSearch?: () => void;
   onNavigate?: () => void;
 }) {
   const publicChannels = channels.filter((c) => c.type === 'channel');
   const projectName = currentProject?.name;
+  const dmUsers = users.filter((u) => u.id !== currentUserId);
 
   return (
     <div className="pb-3">
@@ -311,7 +327,27 @@ function ChatTabContent({
       ))}
 
       {/* DIRECT MESSAGES */}
-      <SectionHeader label="DIRECT MESSAGES" count={agents.length} />
+      <SectionHeader label="DIRECT MESSAGES" count={agents.length + dmUsers.length} />
+      {dmUsers.map((user) => {
+        const name = user.display_name ?? user.username;
+        return (
+          <NavItem
+            key={`user-${user.id}`}
+            to={projectName ? projectUserDmPath(projectName, user.id) : '/'}
+            icon={<Avatar name={name} kind="user" size="sm" />}
+            label={
+              <span className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap">
+                <span className="font-medium min-w-0 truncate whitespace-nowrap">{name}</span>
+                <span className="text-[11px] font-mono text-text-secondary truncate whitespace-nowrap">
+                  @{user.username}
+                </span>
+              </span>
+            }
+            active={currentDmUserId === user.id}
+            onNavigate={onNavigate}
+          />
+        );
+      })}
       {agents.map((a) => (
         <NavItem
           key={a.id}
@@ -338,11 +374,13 @@ function ChatTabContent({
 
 function MembersTabContent({
   agents,
+  users,
   currentProject,
   onCreateAgent,
   onNavigate,
 }: {
   agents: Agent[];
+  users: AuthUser[];
   currentProject: Project | null;
   onCreateAgent?: () => void;
   onNavigate?: () => void;
@@ -350,6 +388,39 @@ function MembersTabContent({
   const projectName = currentProject?.name;
   return (
     <div className="pb-3">
+      <SectionHeader label="USERS" count={users.length} />
+      {users.map((user) => {
+        const name = user.display_name ?? user.username;
+        return (
+          <NavItem
+            key={user.id}
+            to={projectName ? projectUserDmPath(projectName, user.id) : '/'}
+            icon={<Avatar name={name} kind="user" size="sm" />}
+            label={
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="font-medium truncate">{name}</span>
+                <span className="text-[11px] font-mono text-text-secondary truncate">
+                  @{user.username}
+                </span>
+              </span>
+            }
+            rightSlot={
+              user.role === 'admin' ? (
+                <span className="rounded border border-black px-1 py-0.5 font-mono text-[9px]">
+                  admin
+                </span>
+              ) : undefined
+            }
+            onNavigate={onNavigate}
+          />
+        );
+      })}
+      {users.length === 0 && (
+        <div className="px-3 py-2 text-xs text-text-secondary font-mono">
+          No users loaded.
+        </div>
+      )}
+
       <SectionHeader label="AGENTS" count={agents.length} onAdd={onCreateAgent} />
       {agents.map((a) => (
         <NavItem

@@ -1,24 +1,33 @@
 import type { FastifyInstance } from 'fastify';
-import { channelRepo, agentRepo, messageRepo } from '../db/repos.js';
+import { channelRepo, agentRepo, messageRepo, userChannelRepo } from '../db/repos.js';
 import { abortChannelAgentRuns } from '../agents/engine.js';
 import {
   dbForProjectId,
   dbForResource,
   forEachProjectDb,
 } from './_helpers.js';
+import { getUserFromRequest, listEnabledUsersByIds } from '../auth/session.js';
+import { openAuthDb } from '../auth/db.js';
+import {
+  canAccessChannel,
+  canManageChannel,
+  visibleChannelsForUser,
+} from '../auth/channel-access.js';
 
 export async function channelRoutes(app: FastifyInstance): Promise<void> {
   // 列出频道；可选 ?project_id= 过滤
   app.get('/api/channels', async (req) => {
+    const user = getUserFromRequest(req);
+    if (!user) return [];
     const query = req.query as { project_id?: string };
     if (query.project_id) {
       const ctx = dbForProjectId(query.project_id);
       if (!ctx) return [];
-      return channelRepo.list(ctx.db).map((c) => ({ ...c, project_id: ctx.projectId }));
+      return visibleChannelsForUser(ctx.db, user).map((c) => ({ ...c, project_id: ctx.projectId }));
     }
     // 全局：遍历所有 open project，合并 channels 列表
     return forEachProjectDb(({ db, projectId }) =>
-      channelRepo.list(db).map((c) => ({ ...c, project_id: projectId })),
+      visibleChannelsForUser(db, user).map((c) => ({ ...c, project_id: projectId })),
     );
   });
 
@@ -44,12 +53,57 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       reply.code(404);
       return { error: 'project not found' };
     }
+    const user = getUserFromRequest(req);
+    if (!user) {
+      reply.code(401);
+      return { error: 'unauthorized' };
+    }
     const channel = channelRepo.create(ctx.db, {
       id: body.id,
       name: body.name,
       description: body.description ?? null,
       type: body.type ?? 'channel',
     });
+    if (channel.type === 'channel') {
+      userChannelRepo.addToChannel(ctx.db, channel.id, user.id);
+    }
+    return { ...channel, project_id: ctx.projectId };
+  });
+
+  // 获取/创建当前用户与另一个用户之间的 DM channel（必须带 project_id）
+  app.post('/api/channels/user-dm/:userId', async (req, reply) => {
+    const currentUser = getUserFromRequest(req);
+    if (!currentUser) {
+      reply.code(401);
+      return { error: 'unauthorized' };
+    }
+    const { userId } = req.params as { userId: string };
+    const body = req.body as { project_id?: string | null };
+    if (!body.project_id) {
+      reply.code(400);
+      return { error: 'project_id is required' };
+    }
+    if (userId === currentUser.id) {
+      reply.code(400);
+      return { error: 'cannot create dm with yourself' };
+    }
+    const target = openAuthDb()
+      .prepare(
+        `SELECT id FROM users
+         WHERE id = ? AND disabled_at IS NULL
+         LIMIT 1`,
+      )
+      .get(userId) as { id: string } | undefined;
+    if (!target) {
+      reply.code(404);
+      return { error: 'user not found' };
+    }
+    const ctx = dbForProjectId(body.project_id);
+    if (!ctx) {
+      reply.code(404);
+      return { error: 'project not found' };
+    }
+    const channel = channelRepo.getOrCreateUserDm(ctx.db, currentUser.id, userId);
     return { ...channel, project_id: ctx.projectId };
   });
 
@@ -66,6 +120,11 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       reply.code(404);
       return { error: 'channel not found' };
     }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
     return { ...ch, project_id: ctx.projectId };
   });
 
@@ -76,6 +135,11 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canManageChannel(ctx.db, id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     const body = req.body as { name?: string; description?: string | null };
     const ch = channelRepo.update(ctx.db, id, body ?? {});
@@ -94,6 +158,11 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       reply.code(404);
       return { error: 'channel not found' };
     }
+    const user = getUserFromRequest(req);
+    if (!user || !canManageChannel(ctx.db, id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
     channelRepo.remove(ctx.db, id);
     reply.code(204);
   });
@@ -105,6 +174,11 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     const query = req.query as { limit?: string; before?: string; parent_id?: string };
     const limit = query.limit ? Math.min(200, Number(query.limit)) : 10;
@@ -129,7 +203,80 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       reply.code(404);
       return { error: 'channel not found' };
     }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
     return agentRepo.listInChannel(ctx.db, id);
+  });
+
+  // 频道内 user 列表
+  app.get('/api/channels/:id/users', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const ctx = dbForResource('channels', id);
+    if (!ctx) {
+      reply.code(404);
+      return { error: 'channel not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
+    const userIds = userChannelRepo.listIdsInChannel(ctx.db, id);
+    return listEnabledUsersByIds(userIds);
+  });
+
+  // 加入 user
+  app.post('/api/channels/:id/users', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const ctx = dbForResource('channels', id);
+    if (!ctx) {
+      reply.code(404);
+      return { error: 'channel not found' };
+    }
+    const currentUser = getUserFromRequest(req);
+    if (!currentUser || !canManageChannel(ctx.db, id, currentUser)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
+    const { user_id } = req.body as { user_id: string };
+    if (!user_id) {
+      reply.code(400);
+      return { error: 'user_id is required' };
+    }
+    const user = openAuthDb()
+      .prepare(
+        `SELECT id FROM users
+         WHERE id = ? AND disabled_at IS NULL
+         LIMIT 1`,
+      )
+      .get(user_id) as { id: string } | undefined;
+    if (!user) {
+      reply.code(404);
+      return { error: 'user not found' };
+    }
+    userChannelRepo.addToChannel(ctx.db, id, user_id);
+    reply.code(201);
+    return { ok: true };
+  });
+
+  // 移除 user
+  app.delete('/api/channels/:id/users/:userId', async (req, reply) => {
+    const { id, userId } = req.params as { id: string; userId: string };
+    const ctx = dbForResource('channels', id);
+    if (!ctx) {
+      reply.code(404);
+      return { error: 'channel not found' };
+    }
+    const currentUser = getUserFromRequest(req);
+    if (!currentUser || !canManageChannel(ctx.db, id, currentUser)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
+    userChannelRepo.removeFromChannel(ctx.db, id, userId);
+    reply.code(204);
   });
 
   // 加入 agent
@@ -139,6 +286,11 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const currentUser = getUserFromRequest(req);
+    if (!currentUser || !canManageChannel(ctx.db, id, currentUser)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     const { agent_id } = req.body as { agent_id: string };
     if (!agent_id) {
@@ -158,6 +310,11 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       reply.code(404);
       return { error: 'channel not found' };
     }
+    const currentUser = getUserFromRequest(req);
+    if (!currentUser || !canManageChannel(ctx.db, id, currentUser)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
     agentRepo.removeFromChannel(ctx.db, id, agentId);
     reply.code(204);
   });
@@ -169,6 +326,11 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canManageChannel(ctx.db, id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     const killed = abortChannelAgentRuns(ctx.db, id);
     return { stopped: killed };

@@ -9,6 +9,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { ChatMessage, MessageMetadata, SenderType } from '@openspace/shared';
 import { dbForResource, forEachProjectDb } from './_helpers.js';
+import { canAccessChannel } from '../auth/channel-access.js';
+import { getUserFromRequest } from '../auth/session.js';
 
 interface RawRow {
   id: string;
@@ -53,6 +55,8 @@ function compactMessageMetadata(metadata: MessageMetadata | null): MessageMetada
 
 export async function extraRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/messages/search', async (req) => {
+    const user = getUserFromRequest(req);
+    if (!user) return [] as ChatMessage[];
     const query = req.query as { q?: string; channel_id?: string; limit?: string };
     const q = (query.q ?? '').trim();
     if (!q) return [] as ChatMessage[];
@@ -62,6 +66,7 @@ export async function extraRoutes(app: FastifyInstance): Promise<void> {
     if (query.channel_id) {
       const ctx = dbForResource('channels', query.channel_id);
       if (!ctx) return [];
+      if (!canAccessChannel(ctx.db, query.channel_id, user)) return [];
       const rows = ctx.db
         .prepare(
           `SELECT * FROM messages
@@ -80,11 +85,15 @@ export async function extraRoutes(app: FastifyInstance): Promise<void> {
            ORDER BY created_at DESC
            LIMIT ?`,
         )
-        .all(like, limit) as RawRow[]).map(rowToMessage),
+        .all(like, limit) as RawRow[])
+        .filter((row) => canAccessChannel(db, row.channel_id, user))
+        .map(rowToMessage),
     ).slice(0, limit);
   });
 
   app.get('/api/threads', async (req) => {
+    const user = getUserFromRequest(req);
+    if (!user) return [] as ChatMessage[];
     const query = req.query as { limit?: string };
     const limit = query.limit ? Math.min(200, Number(query.limit)) : 100;
     return forEachProjectDb(({ db }) =>
@@ -95,7 +104,9 @@ export async function extraRoutes(app: FastifyInstance): Promise<void> {
            ORDER BY created_at DESC
            LIMIT ?`,
         )
-        .all(limit) as RawRow[]).map(rowToMessage),
+        .all(limit) as RawRow[])
+        .filter((row) => canAccessChannel(db, row.channel_id, user))
+        .map(rowToMessage),
     ).slice(0, limit);
   });
 
@@ -106,10 +117,17 @@ export async function extraRoutes(app: FastifyInstance): Promise<void> {
       reply.code(404);
       return { error: 'message not found' };
     }
-    const exists = ctx.db.prepare('SELECT id FROM messages WHERE id = ?').get(id);
+    const exists = ctx.db.prepare('SELECT id, channel_id FROM messages WHERE id = ?').get(id) as
+      | { id: string; channel_id: string }
+      | undefined;
     if (!exists) {
       reply.code(404);
       return { error: 'message not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, exists.channel_id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     ctx.db
       .prepare('INSERT OR REPLACE INTO saved_messages (message_id, saved_at) VALUES (?, ?)')
@@ -124,23 +142,43 @@ export async function extraRoutes(app: FastifyInstance): Promise<void> {
       reply.code(404);
       return { error: 'message not found' };
     }
+    const message = ctx.db.prepare('SELECT channel_id FROM messages WHERE id = ?').get(id) as
+      | { channel_id: string }
+      | undefined;
+    if (!message) {
+      reply.code(404);
+      return { error: 'message not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, message.channel_id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
     ctx.db.prepare('DELETE FROM saved_messages WHERE message_id = ?').run(id);
     reply.code(204);
   });
 
   app.post('/api/messages/saved-status', async (req) => {
+    const user = getUserFromRequest(req);
     const body = req.body as { ids?: string[] };
     const ids = Array.from(new Set((body?.ids ?? []).filter(Boolean))).slice(0, 200);
     const status: Record<string, boolean> = Object.fromEntries(ids.map((id) => [id, false]));
-    if (ids.length === 0) return status;
+    if (!user || ids.length === 0) return status;
 
     const placeholders = ids.map(() => '?').join(',');
     forEachProjectDb(({ db }) => {
       const rows = db
-        .prepare(`SELECT message_id FROM saved_messages WHERE message_id IN (${placeholders})`)
-        .all(...ids) as { message_id: string }[];
+        .prepare(
+          `SELECT s.message_id, m.channel_id
+           FROM saved_messages s
+           JOIN messages m ON m.id = s.message_id
+           WHERE s.message_id IN (${placeholders})`,
+        )
+        .all(...ids) as Array<{ message_id: string; channel_id: string }>;
       for (const row of rows) {
-        status[row.message_id] = true;
+        if (canAccessChannel(db, row.channel_id, user)) {
+          status[row.message_id] = true;
+        }
       }
       return [];
     });
@@ -151,11 +189,20 @@ export async function extraRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const ctx = dbForResource('messages', id);
     if (!ctx) return { saved: false };
+    const message = ctx.db.prepare('SELECT channel_id FROM messages WHERE id = ?').get(id) as
+      | { channel_id: string }
+      | undefined;
+    const user = getUserFromRequest(req);
+    if (!message || !user || !canAccessChannel(ctx.db, message.channel_id, user)) {
+      return { saved: false };
+    }
     const row = ctx.db.prepare('SELECT 1 FROM saved_messages WHERE message_id = ?').get(id);
     return { saved: !!row };
   });
 
-  app.get('/api/saved', async () => {
+  app.get('/api/saved', async (req) => {
+    const user = getUserFromRequest(req);
+    if (!user) return [] as ChatMessage[];
     return forEachProjectDb(({ db }) =>
       (db
         .prepare(
@@ -164,7 +211,9 @@ export async function extraRoutes(app: FastifyInstance): Promise<void> {
            ORDER BY s.saved_at DESC
            LIMIT 200`,
         )
-        .all() as RawRow[]).map(rowToMessage),
+        .all() as RawRow[])
+        .filter((row) => canAccessChannel(db, row.channel_id, user))
+        .map(rowToMessage),
     ).slice(0, 200);
   });
 }

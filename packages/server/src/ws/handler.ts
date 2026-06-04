@@ -9,6 +9,8 @@ import { routeUserMessage } from '../messaging/router.js';
 import { hub } from './hub.js';
 import { dbForResource } from '../routes/_helpers.js';
 import { getUserFromRequest } from '../auth/session.js';
+import type { AuthUser } from '../auth/session.js';
+import { canAccessChannel } from '../auth/channel-access.js';
 import { config } from '../config.js';
 
 export function registerWSRoute(app: FastifyInstance): void {
@@ -36,7 +38,7 @@ export function registerWSRoute(app: FastifyInstance): void {
           send({ type: 'error', code: 'invalid_json', message: 'invalid JSON' });
           return;
         }
-        handleClientEvent(parsed, socket, app, send, user.id).catch((err: unknown) => {
+        handleClientEvent(parsed, socket, app, send, user).catch((err: unknown) => {
           app.log.error({ err }, 'ws handler error');
           send({
             type: 'error',
@@ -76,7 +78,7 @@ async function handleClientEvent(
   socket: WebSocket,
   app: FastifyInstance,
   send: (e: ServerEvent) => void,
-  userId: string,
+  user: AuthUser,
 ): Promise<void> {
   switch (event.type) {
     case 'ping':
@@ -90,6 +92,14 @@ async function handleClientEvent(
           type: 'error',
           code: 'channel_not_found',
           message: `channel ${event.channel_id} not found`,
+        });
+        return;
+      }
+      if (!canAccessChannel(ctx.db, event.channel_id, user)) {
+        send({
+          type: 'error',
+          code: 'forbidden',
+          message: `channel ${event.channel_id} is not accessible`,
         });
         return;
       }
@@ -112,6 +122,14 @@ async function handleClientEvent(
         });
         return;
       }
+      if (!canAccessChannel(ctx.db, event.channel_id, user)) {
+        send({
+          type: 'error',
+          code: 'forbidden',
+          message: `channel ${event.channel_id} is not accessible`,
+        });
+        return;
+      }
       await routeUserMessage(
         {
           channelId: event.channel_id,
@@ -121,7 +139,7 @@ async function handleClientEvent(
         },
         {
           db: ctx.db,
-          userId,
+          userId: user.id,
           logger: {
             info: (m) => app.log.info(m),
             warn: (m) => app.log.warn(m),

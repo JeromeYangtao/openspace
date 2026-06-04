@@ -44,6 +44,7 @@ export function Layout({ children }: Props) {
   // 从 URL 取当前激活项（CP8.1 — Project scope 路由）
   const channelMatch = useMatch('/p/:projectName/channel/:channelId');
   const dmMatch = useMatch('/p/:projectName/dm/:agentId');
+  const userDmMatch = useMatch('/p/:projectName/user-dm/:userId');
 
   const autoJoinChannelId = channelMatch?.params.channelId;
 
@@ -81,6 +82,7 @@ export function Layout({ children }: Props) {
           onCreateProject={() => setCreateProjectOpen(true)}
           currentChannelId={channelMatch?.params.channelId}
           currentDmAgentId={dmMatch?.params.agentId}
+          currentDmUserId={userDmMatch?.params.userId}
           onCreateAgent={() => setCreateAgentOpen(true)}
           onCreateChannel={() => setCreateChannelOpen(true)}
           onOpenSearch={() => setSearchOpen(true)}

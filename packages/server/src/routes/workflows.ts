@@ -17,6 +17,8 @@ import {
   dbForResource,
   forEachProjectDb,
 } from './_helpers.js';
+import { canAccessChannel } from '../auth/channel-access.js';
+import { getUserFromRequest } from '../auth/session.js';
 
 const COMMAND_RE = /^\/[a-z][a-z0-9-]*$/;
 
@@ -320,11 +322,15 @@ export async function workflowRoutes(app: FastifyInstance): Promise<void> {
 
   // 跨 project 活跃 runs（Inbox 视图）— 遍历所有打开的 db
   app.get('/api/workflow-runs', async (req) => {
+    const user = getUserFromRequest(req);
+    if (!user) return [];
     const query = req.query as {
       status?: 'running' | 'awaiting_approval' | 'completed' | 'aborted' | 'failed';
     };
     return forEachProjectDb(({ db, projectId }) => {
-      const runs = workflowRunRepo.listActive(db, query.status ? { status: query.status } : undefined);
+      const runs = workflowRunRepo
+        .listActive(db, query.status ? { status: query.status } : undefined)
+        .filter((run) => canAccessChannel(db, run.channel_id, user));
       return runs.map((r) => {
         const wf = workflowRepo.getById(db, r.workflow_id);
         const ch = channelRepo.getById(db, r.channel_id);
@@ -350,6 +356,11 @@ export async function workflowRoutes(app: FastifyInstance): Promise<void> {
       reply.code(404);
       return { error: 'workflow run not found' };
     }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, run.channel_id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
     const wf = workflowRepo.getById(ctx.db, run.workflow_id);
     return { ...run, workflow: wf };
   });
@@ -368,6 +379,11 @@ export async function workflowRoutes(app: FastifyInstance): Promise<void> {
       reply.code(404);
       return { error: 'workflow run not found' };
     }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, run.channel_id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
     if (run.status !== 'running' && run.status !== 'awaiting_approval') {
       reply.code(409);
       return { error: `run is already ${run.status}` };
@@ -382,6 +398,11 @@ export async function workflowRoutes(app: FastifyInstance): Promise<void> {
     if (!ctx) {
       reply.code(404);
       return { error: 'channel not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
     }
     const query = req.query as { thread_id?: string };
     const run = workflowRunRepo.getActive(ctx.db, id, query.thread_id ?? null);

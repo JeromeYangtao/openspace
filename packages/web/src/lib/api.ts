@@ -289,6 +289,20 @@ export const joinChannel = (channelId: string, agentId: string) =>
     method: 'POST',
     body: JSON.stringify({ agent_id: agentId }),
   });
+export const getChannelUsers = (channelId: string) =>
+  request<AuthUser[]>(`/api/channels/${channelId}/users`);
+export const joinChannelUser = (channelId: string, userId: string) =>
+  request<{ ok: boolean }>(`/api/channels/${channelId}/users`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId }),
+  });
+export const removeChannelUser = (channelId: string, userId: string) =>
+  request<void>(`/api/channels/${channelId}/users/${userId}`, { method: 'DELETE' });
+export const getOrCreateUserDmChannel = (userId: string, projectId: string) =>
+  request<Channel>(`/api/channels/user-dm/${userId}`, {
+    method: 'POST',
+    body: JSON.stringify({ project_id: projectId }),
+  });
 
 // Tasks
 export const listTasks = (opts?: { channel_id?: string; status?: TaskStatus }) => {

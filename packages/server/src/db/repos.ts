@@ -50,6 +50,11 @@ import { ACTIVITY_RETENTION_PER_AGENT } from '@openspace/shared';
 
 const now = (): number => Date.now();
 
+function dmChannelIdForUsers(userA: string, userB: string): string {
+  const [first, second] = [userA, userB].sort();
+  return `dm_user_${first}_${second}`;
+}
+
 // =============================================================================
 // Projects（D-21）：项目元数据已迁移到 <workspace>/.openspace/project.json，
 // 不再存放在 SQLite。本文件不再 export projectRepo；改用 config/project-meta.ts +
@@ -137,6 +142,60 @@ export const channelRepo = {
 
   remove(db: Database, id: string): void {
     db.prepare('DELETE FROM channels WHERE id = ?').run(id);
+  },
+
+  getOrCreateUserDm(db: Database, userA: string, userB: string): Channel {
+    const id = dmChannelIdForUsers(userA, userB);
+    const existing = this.getById(db, id);
+    if (existing) return existing;
+
+    const channel = this.create(db, {
+      id,
+      name: 'direct-message',
+      description: null,
+      type: 'dm',
+    });
+    userChannelRepo.addToChannel(db, id, userA);
+    userChannelRepo.addToChannel(db, id, userB);
+    return channel;
+  },
+};
+
+export const userChannelRepo = {
+  listIdsInChannel(db: Database, channelId: string): string[] {
+    return (
+      db
+        .prepare(
+          `SELECT user_id FROM channel_users
+           WHERE channel_id = ?
+           ORDER BY user_id ASC`,
+        )
+        .all(channelId) as Array<{ user_id: string }>
+    ).map((row) => row.user_id);
+  },
+
+  addToChannel(db: Database, channelId: string, userId: string): void {
+    db.prepare(
+      'INSERT OR IGNORE INTO channel_users (channel_id, user_id) VALUES (?, ?)',
+    ).run(channelId, userId);
+  },
+
+  hasUser(db: Database, channelId: string, userId: string): boolean {
+    const row = db
+      .prepare(
+        `SELECT 1 FROM channel_users
+         WHERE channel_id = ? AND user_id = ?
+         LIMIT 1`,
+      )
+      .get(channelId, userId);
+    return !!row;
+  },
+
+  removeFromChannel(db: Database, channelId: string, userId: string): void {
+    db.prepare('DELETE FROM channel_users WHERE channel_id = ? AND user_id = ?').run(
+      channelId,
+      userId,
+    );
   },
 };
 

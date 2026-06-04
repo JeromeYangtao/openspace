@@ -20,6 +20,7 @@
  *   - v2: Sprint 8 / Lo-26 修复 —— agents 表加 `role` 字段 + `idx_agents_role` 索引
  *   - v3: agent_runs 增加 run manager 心跳字段
  *   - v4: agent_run_jobs 队列表 + runtime_sessions
+ *   - v5: channel_users 用户频道成员表
  */
 
 import Database from 'better-sqlite3';
@@ -36,7 +37,7 @@ const SCHEMA_CANDIDATES = [
 ];
 const SCHEMA_PATH = SCHEMA_CANDIDATES.find((p) => existsSync(p));
 
-const PER_PROJECT_SCHEMA_VERSION = '4';
+const PER_PROJECT_SCHEMA_VERSION = '5';
 const POOL_MAX = 20;
 const IDLE_CLOSE_MS = 30 * 60 * 1000; // 30 min
 
@@ -226,6 +227,23 @@ function applyMigrations(db: DB, fromVersion: string, toVersion: string): void {
         updated_at      INTEGER NOT NULL,
         UNIQUE(runtime, agent_id, channel_id)
       );
+    `);
+  }
+  // v4 → v5 / fresh → v5: 用户可加入频道；users 存在全局 auth DB，这里只保存 user_id。
+  if (
+    fromVersion === '4' ||
+    fromVersion === '3' ||
+    fromVersion === '2' ||
+    fromVersion === '1' ||
+    fromVersion === '0'
+  ) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS channel_users (
+        channel_id      TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+        user_id         TEXT NOT NULL,
+        PRIMARY KEY (channel_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_channel_users_user ON channel_users(user_id);
     `);
   }
   void toVersion;

@@ -111,6 +111,15 @@ function compactJson(value: unknown, maxLength = 1200): string | undefined {
   }
 }
 
+function policyAmendmentFromParams(params: Record<string, unknown>): string | undefined {
+  return compactJson(
+    params.proposedExecpolicyAmendment ??
+      params.proposedExecPolicyAmendment ??
+      params.execpolicyAmendment ??
+      params.execPolicyAmendment,
+  );
+}
+
 function approvalDetail(
   kind: 'command' | 'file_change' | 'permissions',
   params: Record<string, unknown>,
@@ -178,6 +187,8 @@ function decisionFor(
       ? 'accept'
       : decision === 'approve_for_session'
         ? 'acceptForSession'
+        : decision === 'approve_with_policy'
+          ? 'acceptWithExecpolicyAmendment'
         : decision === 'reject'
           ? 'decline'
           : 'cancel';
@@ -420,6 +431,7 @@ export class CodexAppServerAdapter implements CLIAdapter {
         const title = approvalTitle(method);
         const command = commandFromParams(requestParams);
         const detail = approvalDetail(kind, requestParams);
+        const policyAmendment = policyAmendmentFromParams(requestParams);
         const reason =
           typeof requestParams.reason === 'string'
             ? requestParams.reason
@@ -432,6 +444,7 @@ export class CodexAppServerAdapter implements CLIAdapter {
           title,
           command,
           reason,
+          policyAmendment,
           decide: (decision) => {
             resetIdleTimer();
             pendingApprovalIds.delete(approval.id);
@@ -458,6 +471,7 @@ export class CodexAppServerAdapter implements CLIAdapter {
           command,
           detail,
           reason,
+          policyAmendment,
           supported: true,
         });
       };

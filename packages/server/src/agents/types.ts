@@ -36,6 +36,7 @@ export type CLIEvent =
       command?: string;
       detail?: string;
       reason?: string;
+      policyAmendment?: string;
       supported: boolean;
     }
   | { type: 'error'; message: string; code?: string; recoverable?: boolean };

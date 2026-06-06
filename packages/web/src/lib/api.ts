@@ -262,10 +262,14 @@ export const getAgentActivity = (
   const q = qs.toString();
   return request<AgentActivity[]>(`/api/agents/${id}/activity${q ? `?${q}` : ''}`);
 };
-export const decideAgentApproval = (
-  id: string,
-  decision: 'approve' | 'approve_for_session' | 'reject' | 'cancel',
-) =>
+export type AgentApprovalDecision =
+  | 'approve'
+  | 'approve_for_session'
+  | 'approve_with_policy'
+  | 'reject'
+  | 'cancel';
+
+export const decideAgentApproval = (id: string, decision: AgentApprovalDecision) =>
   request<{ ok: boolean }>(`/api/agent-approvals/${id}/decision`, {
     method: 'POST',
     body: JSON.stringify({ decision }),
@@ -277,6 +281,7 @@ export interface PendingAgentApproval {
   title: string;
   command?: string;
   reason?: string;
+  policyAmendment?: string;
   createdAt: number;
 }
 

@@ -9,6 +9,7 @@ import { getUserFromRequest } from '../auth/session.js';
 const DECISIONS = new Set<ApprovalDecision>([
   'approve',
   'approve_for_session',
+  'approve_with_policy',
   'reject',
   'cancel',
 ]);
@@ -30,7 +31,9 @@ export async function agentApprovalRoutes(app: FastifyInstance): Promise<void> {
 
     if (!decision || !DECISIONS.has(decision)) {
       reply.code(400);
-      return { error: 'decision must be approve, approve_for_session, reject, or cancel' };
+      return {
+        error: 'decision must be approve, approve_for_session, approve_with_policy, reject, or cancel',
+      };
     }
 
     if (!resolveApproval(id, decision)) {

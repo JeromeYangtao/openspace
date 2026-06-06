@@ -1,15 +1,14 @@
 import { useState, type ReactNode } from 'react';
-import type { PendingAgentApproval } from '../lib/api';
+import type { AgentApprovalDecision, PendingAgentApproval } from '../lib/api';
 import { decideAgentApproval } from '../lib/api';
 import type { ApprovalResolution } from '../stores/approvals';
 import { useApprovalsStore } from '../stores/approvals';
 import { cn } from '../lib/cn';
 
-function resolutionForDecision(
-  decision: 'approve' | 'approve_for_session' | 'reject',
-): ApprovalResolution {
+function resolutionForDecision(decision: AgentApprovalDecision): ApprovalResolution {
   if (decision === 'approve') return 'approved';
   if (decision === 'approve_for_session') return 'approved_for_session';
+  if (decision === 'approve_with_policy') return 'approved_with_policy';
   return 'rejected';
 }
 
@@ -23,7 +22,7 @@ export function GlobalApprovalBanner() {
 
   const decide = async (
     approval: PendingAgentApproval,
-    decision: 'approve' | 'approve_for_session' | 'reject',
+    decision: AgentApprovalDecision,
   ) => {
     setPendingDecision(`${approval.id}:${decision}`);
     setErrorById((errors) => ({ ...errors, [approval.id]: '' }));
@@ -55,6 +54,11 @@ export function GlobalApprovalBanner() {
               <div className="mt-1 truncate font-mono text-[11px] text-text-secondary">
                 {approval.command || approval.reason || approval.kind}
               </div>
+              {approval.policyAmendment && (
+                <pre className="mt-1 max-h-20 overflow-auto whitespace-pre-wrap rounded border border-black/20 bg-bg-main p-1 font-mono text-[10px] text-text-secondary">
+                  {approval.policyAmendment}
+                </pre>
+              )}
               {errorById[approval.id] && (
                 <div className="mt-1 font-mono text-[11px] text-accent-red">
                   {errorById[approval.id]}
@@ -76,6 +80,15 @@ export function GlobalApprovalBanner() {
               >
                 Allow for session
               </DecisionButton>
+              {approval.policyAmendment && (
+                <DecisionButton
+                  busy={pendingDecision === `${approval.id}:approve_with_policy`}
+                  disabled={pendingDecision !== null}
+                  onClick={() => void decide(approval, 'approve_with_policy')}
+                >
+                  Allow always
+                </DecisionButton>
+              )}
               <DecisionButton
                 busy={pendingDecision === `${approval.id}:reject`}
                 disabled={pendingDecision !== null}

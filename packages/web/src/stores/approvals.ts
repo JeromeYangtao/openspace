@@ -1,7 +1,12 @@
 import { create } from 'zustand';
 import { listAgentApprovals, type PendingAgentApproval } from '../lib/api';
 
-export type ApprovalResolution = 'approved' | 'approved_for_session' | 'rejected' | 'resolved';
+export type ApprovalResolution =
+  | 'approved'
+  | 'approved_for_session'
+  | 'approved_with_policy'
+  | 'rejected'
+  | 'resolved';
 
 interface ApprovalsState {
   resolvedById: Map<string, ApprovalResolution>;

@@ -1,6 +1,11 @@
 type ApprovalKind = 'command' | 'file_change' | 'permissions';
 
-export type ApprovalDecision = 'approve' | 'approve_for_session' | 'reject' | 'cancel';
+export type ApprovalDecision =
+  | 'approve'
+  | 'approve_for_session'
+  | 'approve_with_policy'
+  | 'reject'
+  | 'cancel';
 
 export interface PendingApproval {
   id: string;
@@ -8,6 +13,7 @@ export interface PendingApproval {
   title: string;
   command?: string;
   reason?: string;
+  policyAmendment?: string;
   createdAt: number;
   decide: (decision: ApprovalDecision) => void;
   cancel: () => void;

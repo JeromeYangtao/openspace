@@ -12,7 +12,12 @@ import type {
   ChatMessage,
 } from '@openspace/shared';
 import { cn } from '../lib/cn';
-import { decideAgentApproval, saveMessage, unsaveMessage } from '../lib/api';
+import {
+  decideAgentApproval,
+  saveMessage,
+  unsaveMessage,
+  type AgentApprovalDecision,
+} from '../lib/api';
 import type { ApprovalResolution } from '../stores/approvals';
 import { useApprovalsStore } from '../stores/approvals';
 import { useAuthStore } from '../stores/auth';
@@ -316,7 +321,15 @@ function compactActivityEvents(events: AgentActivityPayload[]): ActivityRow[] {
         rows.push({
           kind: 'approval',
           label: 'approval',
-          text: [event.title, event.command, event.detail, event.reason].filter(Boolean).join('\n'),
+          text: [
+            event.title,
+            event.command,
+            event.detail,
+            event.reason,
+            event.policyAmendment ? `Policy amendment:\n${event.policyAmendment}` : undefined,
+          ]
+            .filter(Boolean)
+            .join('\n'),
           callId: event.call_id,
           supported: event.supported,
         });
@@ -374,7 +387,10 @@ function ApprovalRequestRow({
   supported?: boolean;
 }) {
   const [pendingDecision, setPendingDecision] = useState<
-    'approve' | 'approve_for_session' | 'reject' | null
+    Extract<
+      AgentApprovalDecision,
+      'approve' | 'approve_for_session' | 'approve_with_policy' | 'reject'
+    > | null
   >(null);
   const resolved = useApprovalsStore((s) => (callId ? s.resolvedById.get(callId) : undefined));
   const markResolved = useApprovalsStore((s) => s.markResolved);
@@ -382,7 +398,14 @@ function ApprovalRequestRow({
   const [title, ...details] = text.split('\n').filter(Boolean);
   const canDecide = supported !== false && !!callId && !resolved;
 
-  const decide = async (decision: 'approve' | 'approve_for_session' | 'reject') => {
+  const canApproveWithPolicy = text.includes('Policy amendment:');
+
+  const decide = async (
+    decision: Extract<
+      AgentApprovalDecision,
+      'approve' | 'approve_for_session' | 'approve_with_policy' | 'reject'
+    >,
+  ) => {
     if (!callId) return;
     setPendingDecision(decision);
     setError(null);
@@ -446,6 +469,26 @@ function ApprovalRequestRow({
         >
           {pendingDecision === 'approve_for_session' ? 'Allowing...' : 'Allow for session'}
         </button>
+        {canApproveWithPolicy && (
+          <button
+            type="button"
+            disabled={!canDecide || pendingDecision !== null}
+            onClick={() => void decide('approve_with_policy')}
+            title={
+              supported === false
+                ? 'Codex exec mode cannot receive approval decisions yet'
+                : 'Allow similar Codex requests persistently by adding the proposed policy rule'
+            }
+            className={cn(
+              'px-2 py-1 border-2 border-black rounded bg-bg-card text-[10px] font-bold',
+              canDecide && pendingDecision === null
+                ? 'hover:bg-accent-green'
+                : 'opacity-60 cursor-not-allowed',
+            )}
+          >
+            {pendingDecision === 'approve_with_policy' ? 'Allowing...' : 'Allow always'}
+          </button>
+        )}
         <button
           type="button"
           disabled={!canDecide || pendingDecision !== null}
@@ -475,11 +518,10 @@ function ApprovalRequestRow({
   );
 }
 
-function resolutionForDecision(
-  decision: 'approve' | 'approve_for_session' | 'reject',
-): ApprovalResolution {
+function resolutionForDecision(decision: AgentApprovalDecision): ApprovalResolution {
   if (decision === 'approve') return 'approved';
   if (decision === 'approve_for_session') return 'approved_for_session';
+  if (decision === 'approve_with_policy') return 'approved_with_policy';
   return 'rejected';
 }
 

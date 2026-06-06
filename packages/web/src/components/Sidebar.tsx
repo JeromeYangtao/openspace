@@ -205,19 +205,28 @@ function SectionHeader({
   label,
   count,
   onAdd,
+  collapsed,
+  onToggle,
 }: {
   label: string;
   count?: number;
   onAdd?: () => void;
+  collapsed?: boolean;
+  onToggle?: () => void;
 }) {
   return (
     <div className="flex items-center justify-between px-3 pt-3 pb-1">
-      <div className="flex items-center gap-1">
-        <span className="section-header">▼ {label}</span>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex min-w-0 items-center gap-1 text-left hover:underline"
+        aria-expanded={!collapsed}
+      >
+        <span className="section-header">{collapsed ? '▶' : '▼'} {label}</span>
         {typeof count === 'number' && (
           <span className="text-[11px] font-mono text-text-secondary">{count}</span>
         )}
-      </div>
+      </button>
       {onAdd && (
         <button
           onClick={onAdd}
@@ -296,6 +305,13 @@ function ChatTabContent({
   const publicChannels = channels.filter((c) => c.type === 'channel');
   const projectName = currentProject?.name;
   const dmUsers = users.filter((u) => u.id !== currentUserId);
+  const [collapsed, setCollapsed] = useState({
+    channels: false,
+    dms: false,
+  });
+  const toggleSection = (key: keyof typeof collapsed) => {
+    setCollapsed((next) => ({ ...next, [key]: !next[key] }));
+  };
 
   return (
     <div className="pb-3">
@@ -314,60 +330,76 @@ function ChatTabContent({
       </div>
 
       {/* CHANNELS */}
-      <SectionHeader label="CHANNELS" count={publicChannels.length} onAdd={onCreateChannel} />
-      {publicChannels.map((ch) => (
-        <NavItem
-          key={ch.id}
-          to={projectName ? projectChannelPath(projectName, ch.id) : '/'}
-          icon={<span className="font-bold">#</span>}
-          label={ch.name}
-          active={currentChannelId === ch.id}
-          onNavigate={onNavigate}
-        />
-      ))}
-
-      {/* DIRECT MESSAGES */}
-      <SectionHeader label="DIRECT MESSAGES" count={agents.length + dmUsers.length} />
-      {dmUsers.map((user) => {
-        const name = user.display_name ?? user.username;
-        return (
+      <SectionHeader
+        label="CHANNELS"
+        count={publicChannels.length}
+        onAdd={onCreateChannel}
+        collapsed={collapsed.channels}
+        onToggle={() => toggleSection('channels')}
+      />
+      {!collapsed.channels &&
+        publicChannels.map((ch) => (
           <NavItem
-            key={`user-${user.id}`}
-            to={projectName ? projectUserDmPath(projectName, user.id) : '/'}
-            icon={<Avatar name={name} kind="user" size="sm" />}
-            label={
-              <span className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap">
-                <span className="font-medium min-w-0 truncate whitespace-nowrap">{name}</span>
-                <span className="text-[11px] font-mono text-text-secondary truncate whitespace-nowrap">
-                  @{user.username}
-                </span>
-              </span>
-            }
-            active={currentDmUserId === user.id}
+            key={ch.id}
+            to={projectName ? projectChannelPath(projectName, ch.id) : '/'}
+            icon={<span className="font-bold">#</span>}
+            label={ch.name}
+            active={currentChannelId === ch.id}
             onNavigate={onNavigate}
           />
-        );
-      })}
-      {agents.map((a) => (
-        <NavItem
-          key={a.id}
-          to={projectName ? projectDmPath(projectName, a.id) : '/'}
-          icon={<Avatar name={a.name} kind="agent" size="sm" />}
-          label={
-            <span className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap">
-              <span className="font-medium min-w-0 truncate whitespace-nowrap">{a.name}</span>
-              {a.description && (
-                <span className="text-[11px] font-mono text-text-secondary truncate whitespace-nowrap">
-                  {a.description}
+        ))}
+
+      {/* DIRECT MESSAGES */}
+      <SectionHeader
+        label="DIRECT MESSAGES"
+        count={agents.length + dmUsers.length}
+        collapsed={collapsed.dms}
+        onToggle={() => toggleSection('dms')}
+      />
+      {!collapsed.dms && (
+        <>
+          {dmUsers.map((user) => {
+            const name = user.display_name ?? user.username;
+            return (
+              <NavItem
+                key={`user-${user.id}`}
+                to={projectName ? projectUserDmPath(projectName, user.id) : '/'}
+                icon={<Avatar name={name} kind="user" size="sm" />}
+                label={
+                  <span className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap">
+                    <span className="font-medium min-w-0 truncate whitespace-nowrap">{name}</span>
+                    <span className="text-[11px] font-mono text-text-secondary truncate whitespace-nowrap">
+                      @{user.username}
+                    </span>
+                  </span>
+                }
+                active={currentDmUserId === user.id}
+                onNavigate={onNavigate}
+              />
+            );
+          })}
+          {agents.map((a) => (
+            <NavItem
+              key={a.id}
+              to={projectName ? projectDmPath(projectName, a.id) : '/'}
+              icon={<Avatar name={a.name} kind="agent" size="sm" />}
+              label={
+                <span className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap">
+                  <span className="font-medium min-w-0 truncate whitespace-nowrap">{a.name}</span>
+                  {a.description && (
+                    <span className="text-[11px] font-mono text-text-secondary truncate whitespace-nowrap">
+                      {a.description}
+                    </span>
+                  )}
                 </span>
-              )}
-            </span>
-          }
-          rightSlot={<AgentStatusDot agentId={a.id} size="xs" />}
-          active={currentDmAgentId === a.id}
-          onNavigate={onNavigate}
-        />
-      ))}
+              }
+              rightSlot={<AgentStatusDot agentId={a.id} size="xs" />}
+              active={currentDmAgentId === a.id}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -386,62 +418,83 @@ function MembersTabContent({
   onNavigate?: () => void;
 }) {
   const projectName = currentProject?.name;
+  const [collapsed, setCollapsed] = useState({
+    users: false,
+    agents: false,
+  });
+  const toggleSection = (key: keyof typeof collapsed) => {
+    setCollapsed((next) => ({ ...next, [key]: !next[key] }));
+  };
+
   return (
     <div className="pb-3">
-      <SectionHeader label="USERS" count={users.length} />
-      {users.map((user) => {
-        const name = user.display_name ?? user.username;
-        return (
-          <NavItem
-            key={user.id}
-            to={projectName ? projectUserDmPath(projectName, user.id) : '/'}
-            icon={<Avatar name={name} kind="user" size="sm" />}
-            label={
-              <span className="flex items-center gap-1.5 min-w-0">
-                <span className="font-medium truncate">{name}</span>
-                <span className="text-[11px] font-mono text-text-secondary truncate">
-                  @{user.username}
+      <SectionHeader
+        label="USERS"
+        count={users.length}
+        collapsed={collapsed.users}
+        onToggle={() => toggleSection('users')}
+      />
+      {!collapsed.users &&
+        users.map((user) => {
+          const name = user.display_name ?? user.username;
+          return (
+            <NavItem
+              key={user.id}
+              to={projectName ? projectUserDmPath(projectName, user.id) : '/'}
+              icon={<Avatar name={name} kind="user" size="sm" />}
+              label={
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span className="font-medium truncate">{name}</span>
+                  <span className="text-[11px] font-mono text-text-secondary truncate">
+                    @{user.username}
+                  </span>
                 </span>
-              </span>
-            }
-            rightSlot={
-              user.role === 'admin' ? (
-                <span className="rounded border border-black px-1 py-0.5 font-mono text-[9px]">
-                  admin
-                </span>
-              ) : undefined
-            }
-            onNavigate={onNavigate}
-          />
-        );
-      })}
-      {users.length === 0 && (
+              }
+              rightSlot={
+                user.role === 'admin' ? (
+                  <span className="rounded border border-black px-1 py-0.5 font-mono text-[9px]">
+                    admin
+                  </span>
+                ) : undefined
+              }
+              onNavigate={onNavigate}
+            />
+          );
+        })}
+      {!collapsed.users && users.length === 0 && (
         <div className="px-3 py-2 text-xs text-text-secondary font-mono">
           No users loaded.
         </div>
       )}
 
-      <SectionHeader label="AGENTS" count={agents.length} onAdd={onCreateAgent} />
-      {agents.map((a) => (
-        <NavItem
-          key={a.id}
-          to={projectName ? projectAgentProfilePath(projectName, a.id) : '/'}
-          icon={<Avatar name={a.name} kind="agent" size="sm" />}
-          label={
-            <span className="flex items-center gap-1.5 min-w-0">
-              <span className="font-medium truncate">{a.name}</span>
-              {a.description && (
-                <span className="text-[11px] font-mono text-text-secondary truncate">
-                  {a.description}
-                </span>
-              )}
-            </span>
-          }
-          rightSlot={<AgentStatusDot agentId={a.id} size="xs" />}
-          onNavigate={onNavigate}
-        />
-      ))}
-      {agents.length === 0 && (
+      <SectionHeader
+        label="AGENTS"
+        count={agents.length}
+        onAdd={onCreateAgent}
+        collapsed={collapsed.agents}
+        onToggle={() => toggleSection('agents')}
+      />
+      {!collapsed.agents &&
+        agents.map((a) => (
+          <NavItem
+            key={a.id}
+            to={projectName ? projectAgentProfilePath(projectName, a.id) : '/'}
+            icon={<Avatar name={a.name} kind="agent" size="sm" />}
+            label={
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="font-medium truncate">{a.name}</span>
+                {a.description && (
+                  <span className="text-[11px] font-mono text-text-secondary truncate">
+                    {a.description}
+                  </span>
+                )}
+              </span>
+            }
+            rightSlot={<AgentStatusDot agentId={a.id} size="xs" />}
+            onNavigate={onNavigate}
+          />
+        ))}
+      {!collapsed.agents && agents.length === 0 && (
         <div className="px-3 py-2 text-xs text-text-secondary font-mono">
           No agents yet. Click + to create.
         </div>

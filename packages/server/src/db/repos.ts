@@ -1108,6 +1108,23 @@ export const agentRunJobRepo = {
     return result.changes;
   },
 
+  cancelForAgentInChannel(
+    db: Database,
+    agentId: string,
+    channelId: string,
+    errorMsg: string,
+  ): number {
+    const ts = now();
+    const result = db
+      .prepare(
+        `UPDATE agent_run_jobs
+         SET status = 'cancelled', ended_at = ?, error_msg = ?
+         WHERE agent_id = ? AND channel_id = ? AND status IN ('queued','running')`,
+      )
+      .run(ts, errorMsg, agentId, channelId);
+    return result.changes;
+  },
+
   recoverInterrupted(db: Database, errorMsg: string): number {
     const ts = now();
     const result = db

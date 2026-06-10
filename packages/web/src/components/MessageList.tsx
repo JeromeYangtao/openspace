@@ -17,6 +17,7 @@ interface Props {
   loadingMore?: boolean;
   onLoadMore?: (beforeMessageId: string) => Promise<void>;
   onOpenThread?: (messageId: string) => void;
+  onRunAborted?: (runId: number) => void;
   emptyHint?: React.ReactNode;
 }
 
@@ -29,6 +30,7 @@ export function MessageList({
   loadingMore = false,
   onLoadMore,
   onOpenThread,
+  onRunAborted,
   emptyHint,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -128,6 +130,7 @@ export function MessageList({
           activityEvents={activityByMessage.get(m.id)}
           saved={!!savedById[m.id]}
           onOpenThread={onOpenThread}
+          onRunAborted={onRunAborted}
         />
       ))}
       <div ref={bottomRef} />

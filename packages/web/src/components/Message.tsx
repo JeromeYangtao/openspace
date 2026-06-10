@@ -13,6 +13,7 @@ import type {
 } from '@openspace/shared';
 import { cn } from '../lib/cn';
 import {
+  abortAgentRun,
   decideAgentApproval,
   saveMessage,
   unsaveMessage,
@@ -35,6 +36,7 @@ export interface MessageProps {
   saved?: boolean;
   /** 是否有 thread reply 已存在；用于显示 "N replies" 按钮 */
   onOpenThread?: (rootId: string) => void;
+  onRunAborted?: (runId: number) => void;
 }
 
 export function Message({
@@ -45,8 +47,10 @@ export function Message({
   activityEvents,
   saved: initiallySaved = false,
   onOpenThread,
+  onRunAborted,
 }: MessageProps) {
   const [saved, setSaved] = useState(initiallySaved);
+  const [abortingRun, setAbortingRun] = useState(false);
   const currentUser = useAuthStore((s) => s.user);
 
   useEffect(() => {
@@ -85,6 +89,8 @@ export function Message({
     ? (streamingText ?? message.content)
     : message.content || streamingText || '';
   const showGeneratingPlaceholder = isStreaming && activityRows.length === 0;
+  const activeRunId =
+    message.sender_type === 'agent' && isStreaming ? activityEvents?.[0]?.run_id : undefined;
 
   const displayName =
     message.sender_type === 'agent'
@@ -97,6 +103,17 @@ export function Message({
     message.sender_type === 'agent'
       ? (agent?.description?.split(/[\n。.]/)[0]?.slice(0, 60) ?? '')
       : '';
+
+  const abortRun = async () => {
+    if (!activeRunId || abortingRun) return;
+    setAbortingRun(true);
+    try {
+      await abortAgentRun(activeRunId);
+      onRunAborted?.(activeRunId);
+    } finally {
+      setAbortingRun(false);
+    }
+  };
 
   return (
     <div className="flex gap-3 py-1.5 group">
@@ -119,6 +136,17 @@ export function Message({
           <span className="text-[11px] font-mono text-text-secondary ml-auto">
             {formatTime(message.created_at)}
           </span>
+          {activeRunId && (
+            <button
+              type="button"
+              onClick={() => void abortRun()}
+              disabled={abortingRun}
+              className="px-2 py-0.5 border-2 border-black rounded bg-bg-card text-[10px] font-bold hover:bg-accent-red disabled:opacity-60"
+              title="Stop this agent run"
+            >
+              {abortingRun ? 'Stopping...' : 'Stop'}
+            </button>
+          )}
           <button
             onClick={() => void toggleSave()}
             className={cn(

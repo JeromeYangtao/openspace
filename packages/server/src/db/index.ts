@@ -133,7 +133,7 @@ export function listOpenDbs(): Array<{ workspacePath: string; db: DB }> {
  * 限制：必须 db 已打开。建议 server 启动期 warm-up 所有 recent projects。
  */
 export function findDbByResource(
-  table: 'channels' | 'agents' | 'workflows' | 'messages' | 'tasks' | 'workflow_runs' | 'agent_observations' | 'agent_feedback',
+  table: 'channels' | 'agents' | 'agent_runs' | 'workflows' | 'messages' | 'tasks' | 'workflow_runs' | 'agent_observations' | 'agent_feedback',
   id: string | number,
 ): { workspacePath: string; db: DB } | null {
   for (const entry of pool.values()) {

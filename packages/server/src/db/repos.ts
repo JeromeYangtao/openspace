@@ -839,6 +839,13 @@ function rowToAgentRun(r: AgentRunRow): AgentRun {
 }
 
 export const agentRunRepo = {
+  getById(db: Database, id: number): AgentRun | null {
+    const row = db
+      .prepare('SELECT * FROM agent_runs WHERE id = ?')
+      .get(id) as AgentRunRow | undefined;
+    return row ? rowToAgentRun(row) : null;
+  },
+
   /** 开启一个 run，返回 id */
   start(
     db: Database,

@@ -64,6 +64,17 @@ export function abortAgentRun(agentRunId: number): boolean {
   return true;
 }
 
+export function abortSingleAgentRun(db: Database, agentRunId: number): boolean {
+  const run = agentRunRepo.getById(db, agentRunId);
+  if (!run || run.ended_at !== null) return false;
+
+  const aborted = abortAgentRun(agentRunId);
+  if (!aborted) {
+    agentRunRepo.stop(db, agentRunId, 'stopped: no active worker in this server');
+  }
+  return true;
+}
+
 /**
  * 中止某 channel 内所有活跃 agent_runs。
  *

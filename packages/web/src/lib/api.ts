@@ -226,6 +226,8 @@ export const listAgents = (projectId?: string) => {
 };
 export const listActiveAgentRuns = () =>
   request<(AgentRun & { project_id: string })[]>('/api/agent-runs/active');
+export const abortAgentRun = (id: number) =>
+  request<{ ok: boolean; stopped: boolean }>(`/api/agent-runs/${id}/abort`, { method: 'POST' });
 export const getAgent = (id: string) => request<Agent>(`/api/agents/${id}`);
 export const createAgent = (data: {
   name: string;

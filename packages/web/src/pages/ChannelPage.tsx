@@ -38,6 +38,7 @@ export function ChannelPage() {
   const isAdmin = currentUser?.role === 'admin';
   const channelsLoaded = useChannelsStore((s) => s.loaded);
   const allAgents = useAgentsStore((s) => s.agents);
+  const refreshActiveRuns = useAgentsStore((s) => s.refreshActiveRuns);
   const profileAgent = profileAgentId ? allAgents.find((a) => a.id === profileAgentId) : null;
   const projects = useProjectsStore((s) => s.projects);
   // 关键：selector 返回稳定引用（不在 selector 里创建新数组），避免 re-render 循环
@@ -238,6 +239,11 @@ export function ChannelPage() {
     setParams(next);
   };
 
+  const handleRunAborted = () => {
+    void refreshActiveRuns();
+    if (channelId) scheduleChannelRefresh(channelId, 300);
+  };
+
   return (
     <div className="flex-1 flex min-w-0 min-h-0">
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -270,6 +276,7 @@ export function ChannelPage() {
                   : undefined
               }
               onOpenThread={openThread}
+              onRunAborted={handleRunAborted}
               emptyHint={
                 showMessagesLoading
                   ? 'Loading messages…'

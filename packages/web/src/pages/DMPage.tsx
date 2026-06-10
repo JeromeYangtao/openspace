@@ -29,6 +29,7 @@ export function DMPage() {
   const profileAgentId = profileParam?.startsWith('agent:') ? profileParam.slice(6) : null;
   const agents = useAgentsStore((s) => s.agents);
   const agentsLoaded = useAgentsStore((s) => s.loaded);
+  const refreshActiveRuns = useAgentsStore((s) => s.refreshActiveRuns);
   const agent = agents.find((a) => a.id === agentId);
   const profileAgent = profileAgentId ? agents.find((a) => a.id === profileAgentId) : null;
   const channels = useChannelsStore((s) => s.channels);
@@ -113,6 +114,11 @@ export function DMPage() {
     });
   };
 
+  const handleRunAborted = () => {
+    void refreshActiveRuns();
+    if (channelId) void fetchChannel(channelId);
+  };
+
   const closeSidePanel = () => {
     const next = new URLSearchParams(params);
     next.delete('profile');
@@ -130,6 +136,7 @@ export function DMPage() {
               agentsById={agentsById}
               streamBuffers={streamBuffers}
               activityByMessage={activityByMessage}
+              onRunAborted={handleRunAborted}
               emptyHint={`Start a conversation with ${agent.name}.`}
             />
             <MessageInput placeholder={`Message @${agent.name}`} onSend={send} />

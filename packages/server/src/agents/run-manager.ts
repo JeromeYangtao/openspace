@@ -64,6 +64,39 @@ export function abortAgentRun(agentRunId: number): boolean {
   return true;
 }
 
+export function abortSingleAgentRun(db: Database, agentRunId: number): boolean {
+  const run = agentRunRepo.getById(db, agentRunId);
+  if (!run || run.ended_at !== null) return false;
+
+  const aborted = abortAgentRun(agentRunId);
+  if (!aborted) {
+    agentRunRepo.stop(db, agentRunId, 'stopped: no active worker in this server');
+  }
+  return true;
+}
+
+export function abortAgentRunsInChannel(
+  db: Database,
+  agentId: string,
+  channelId: string,
+  reason = 'cancelled by newer user message',
+): number {
+  const runs = agentRunRepo
+    .listActiveInChannel(db, channelId)
+    .filter((run) => run.agent_id === agentId);
+  let count = 0;
+  for (const run of runs) {
+    if (abortAgentRun(run.id)) {
+      count += 1;
+      continue;
+    }
+    agentRunRepo.stop(db, run.id, reason);
+    count += 1;
+  }
+  count += agentRunJobRepo.cancelForAgentInChannel(db, agentId, channelId, reason);
+  return count;
+}
+
 /**
  * 中止某 channel 内所有活跃 agent_runs。
  *

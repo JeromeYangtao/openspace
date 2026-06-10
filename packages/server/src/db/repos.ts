@@ -839,6 +839,13 @@ function rowToAgentRun(r: AgentRunRow): AgentRun {
 }
 
 export const agentRunRepo = {
+  getById(db: Database, id: number): AgentRun | null {
+    const row = db
+      .prepare('SELECT * FROM agent_runs WHERE id = ?')
+      .get(id) as AgentRunRow | undefined;
+    return row ? rowToAgentRun(row) : null;
+  },
+
   /** 开启一个 run，返回 id */
   start(
     db: Database,
@@ -1098,6 +1105,23 @@ export const agentRunJobRepo = {
          WHERE channel_id = ? AND status IN ('queued','running')`,
       )
       .run(ts, errorMsg, channelId);
+    return result.changes;
+  },
+
+  cancelForAgentInChannel(
+    db: Database,
+    agentId: string,
+    channelId: string,
+    errorMsg: string,
+  ): number {
+    const ts = now();
+    const result = db
+      .prepare(
+        `UPDATE agent_run_jobs
+         SET status = 'cancelled', ended_at = ?, error_msg = ?
+         WHERE agent_id = ? AND channel_id = ? AND status IN ('queued','running')`,
+      )
+      .run(ts, errorMsg, agentId, channelId);
     return result.changes;
   },
 

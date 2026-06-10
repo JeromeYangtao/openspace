@@ -30,6 +30,7 @@ import {
 } from '../db/repos.js';
 import { hub } from '../ws/hub.js';
 import type { TriggerResult } from '../agents/engine.js';
+import { abortAgentRunsInChannel } from '../agents/run-manager.js';
 import { isEveryoneMention, parseMentions } from './mentions.js';
 import {
   abortWorkflowRun,
@@ -196,6 +197,17 @@ export async function routeUserMessage(
   const replyParentId: string | undefined = threadId;
 
   for (const agent of mentionsInChannel) {
+    const stopped = abortAgentRunsInChannel(
+      db,
+      agent.id,
+      channelId,
+      'cancelled by newer user message',
+    );
+    if (stopped > 0) {
+      logger.info(
+        `[router] stopped ${stopped} existing run(s) for ${agent.name} before queuing newer user message`,
+      );
+    }
     enqueueAgentRunJob(
       agent,
       {

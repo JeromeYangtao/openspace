@@ -7,6 +7,9 @@ import {
   dbForResource,
   forEachProjectDb,
 } from './_helpers.js';
+import { canAccessChannel } from '../auth/channel-access.js';
+import { getUserFromRequest } from '../auth/session.js';
+import { abortSingleAgentRun } from '../agents/run-manager.js';
 
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
   // 列出 agent；可选 ?project_id= 过滤
@@ -26,6 +29,32 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     return forEachProjectDb(({ db, projectId }) =>
       agentRunRepo.listActive(db).map((run) => ({ ...run, project_id: projectId })),
     );
+  });
+
+  app.post('/api/agent-runs/:id/abort', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const runId = Number(id);
+    if (!Number.isFinite(runId)) {
+      reply.code(400);
+      return { error: 'invalid run id' };
+    }
+    const ctx = dbForResource('agent_runs', runId);
+    if (!ctx) {
+      reply.code(404);
+      return { error: 'agent run not found' };
+    }
+    const run = agentRunRepo.getById(ctx.db, runId);
+    if (!run) {
+      reply.code(404);
+      return { error: 'agent run not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, run.channel_id, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
+    const stopped = abortSingleAgentRun(ctx.db, runId);
+    return { ok: true, stopped };
   });
 
   // 创建 agent（必须带 project_id）

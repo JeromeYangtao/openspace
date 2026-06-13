@@ -85,20 +85,17 @@ export function parseTokenCountInfo(value: unknown): ContextUsageInfo | null {
   if (!total || !last) return null;
 
   const modelContextWindow = finiteNumber(record.model_context_window);
-  const contextPercent = finiteNumber(record.context_percent);
   const inputTokensInLatestContext = finiteNumber(record.input_tokens_in_latest_context);
-  const fallbackPercent =
-    inputTokensInLatestContext !== null && modelContextWindow && modelContextWindow > 0
-      ? (inputTokensInLatestContext / modelContextWindow) * 100
-      : modelContextWindow && modelContextWindow > 0
-        ? (last.input_tokens / modelContextWindow) * 100
-        : null;
+  const contextPercent =
+    modelContextWindow && modelContextWindow > 0
+      ? (last.input_tokens / modelContextWindow) * 100
+      : null;
 
   return {
     total,
     last,
     model_context_window: modelContextWindow,
-    percent_used: contextPercent !== null ? contextPercent / 100 : fallbackPercent === null ? null : fallbackPercent / 100,
+    percent_used: contextPercent === null ? null : contextPercent / 100,
     context_percent: contextPercent,
     input_tokens_in_latest_context: inputTokensInLatestContext,
   };

@@ -651,7 +651,9 @@ function ContextUsageMeter({
         <TokenStat label="Window limit" value={window} />
       </div>
       <div className="mt-2 text-[10px] font-mono leading-snug text-text-secondary">
-        Context used is reported by Codex session logs. Session total is cumulative usage.
+        {contextPercent === null
+          ? 'Context percent is unavailable without a model window. Session total is cumulative usage.'
+          : 'Context used is calculated from last turn input divided by window limit. Session total is cumulative usage.'}
       </div>
       {canCompact && (
         <div className="mt-3">

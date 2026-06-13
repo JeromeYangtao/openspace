@@ -193,7 +193,10 @@ function parseContextUsage(value: unknown): ContextUsageInfo | null {
       modelContextWindow && modelContextWindow > 0
         ? last.input_tokens / modelContextWindow
         : null,
-    context_percent: null,
+    context_percent:
+      modelContextWindow && modelContextWindow > 0
+        ? (last.input_tokens / modelContextWindow) * 100
+        : null,
     input_tokens_in_latest_context: null,
   };
 }

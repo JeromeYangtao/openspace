@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Agent, AgentActivity, AgentFeedback, AgentStatus, ContextSize, ReasoningEffort } from '@openspace/shared';
 import { cn } from '../lib/cn';
 import {
@@ -17,6 +17,7 @@ import {
   compactAgentSession,
   deleteAgent,
   getAgentActivity,
+  getAgentContextUsage,
   getRuntimeModels,
   listAgentFeedback,
   rejectAgentFeedback,
@@ -43,6 +44,7 @@ type TabKey = 'profile' | 'activity' | 'feedback';
 
 export function AgentProfilePanel({ agent }: Props) {
   const [params, setParams] = useSearchParams();
+  const { channelId } = useParams<{ channelId: string }>();
   const navigate = useNavigate();
   const tab = (params.get('agentTab') ?? 'profile') as TabKey;
   const removeFromStore = useAgentsStore((s) => s.remove);
@@ -121,7 +123,7 @@ export function AgentProfilePanel({ agent }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {tab === 'profile' && <ProfileTab agent={agent} onDelete={actionHandlers.delete} onStart={actionHandlers.start} onStop={actionHandlers.stop} onRestart={actionHandlers.restart} />}
+        {tab === 'profile' && <ProfileTab agent={agent} channelId={channelId} onDelete={actionHandlers.delete} onStart={actionHandlers.start} onStop={actionHandlers.stop} onRestart={actionHandlers.restart} />}
         {tab === 'activity' && <ActivityTab agent={agent} />}
         {tab === 'feedback' && <FeedbackTab agent={agent} />}
       </div>
@@ -382,21 +384,33 @@ function FeedbackCard({
 
 function ProfileTab({
   agent,
+  channelId,
   onDelete,
   onStart,
   onStop,
   onRestart,
 }: {
   agent: Agent;
+  channelId?: string;
   onDelete: () => void | Promise<void>;
   onStart: () => void | Promise<unknown>;
   onStop: () => void | Promise<unknown>;
   onRestart: () => void | Promise<unknown>;
 }) {
   const upsertAgent = useAgentsStore((s) => s.upsert);
+  const setContextUsage = useAgentsStore((s) => s.setContextUsage);
   // CP8.2：派生 status（任意 channel 活跃 → 该 run 状态；否则用 agent.status）
   const derivedStatus = useAgentsStore((s) => s.getDerivedStatus(agent.id));
   const contextUsage = useAgentsStore((s) => s.getLatestContextUsage(agent.id));
+
+  useEffect(() => {
+    if (!channelId || agent.runtime !== 'codex') return;
+    void getAgentContextUsage(agent.id, channelId)
+      .then((usage) => setContextUsage(agent.id, channelId, usage))
+      .catch(() => {
+        // Missing session logs should not hide token usage already received over WS.
+      });
+  }, [agent.id, agent.runtime, channelId, setContextUsage]);
 
   const saveName = async (v: string) => {
     if (!v) return;

@@ -119,6 +119,13 @@ export function DMPage() {
     if (channelId) void fetchChannel(channelId);
   };
 
+  const openAgentProfile = (id: string) => {
+    const next = new URLSearchParams(params);
+    next.set('profile', `agent:${id}`);
+    next.set('agentTab', 'profile');
+    setParams(next);
+  };
+
   const closeSidePanel = () => {
     const next = new URLSearchParams(params);
     next.delete('profile');
@@ -136,6 +143,7 @@ export function DMPage() {
               agentsById={agentsById}
               streamBuffers={streamBuffers}
               activityByMessage={activityByMessage}
+              onOpenAgentProfile={openAgentProfile}
               onRunAborted={handleRunAborted}
               emptyHint={`Start a conversation with ${agent.name}.`}
             />

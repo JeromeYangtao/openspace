@@ -36,6 +36,7 @@ export interface MessageProps {
   saved?: boolean;
   /** 是否有 thread reply 已存在；用于显示 "N replies" 按钮 */
   onOpenThread?: (rootId: string) => void;
+  onOpenAgentProfile?: (agentId: string) => void;
   onRunAborted?: (runId: number) => void;
 }
 
@@ -47,6 +48,7 @@ export function Message({
   activityEvents,
   saved: initiallySaved = false,
   onOpenThread,
+  onOpenAgentProfile,
   onRunAborted,
 }: MessageProps) {
   const [saved, setSaved] = useState(initiallySaved);
@@ -115,16 +117,44 @@ export function Message({
     }
   };
 
+  const canOpenAgentProfile = message.sender_type === 'agent' && !!agent && !!onOpenAgentProfile;
+  const openAgentProfile = () => {
+    if (!canOpenAgentProfile) return;
+    onOpenAgentProfile(agent.id);
+  };
+
   return (
     <div className="flex gap-3 py-1.5 group">
-      <Avatar
-        name={displayName}
-        kind={message.sender_type === 'agent' ? 'agent' : 'user'}
-        size="md"
-      />
+      {canOpenAgentProfile ? (
+        <button
+          type="button"
+          onClick={openAgentProfile}
+          className="h-fit rounded focus:outline-none focus:ring-2 focus:ring-black"
+          title={`Open ${displayName} profile`}
+          aria-label={`Open ${displayName} profile`}
+        >
+          <Avatar name={displayName} kind="agent" size="md" className="cursor-pointer" />
+        </button>
+      ) : (
+        <Avatar
+          name={displayName}
+          kind={message.sender_type === 'agent' ? 'agent' : 'user'}
+          size="md"
+        />
+      )}
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 text-sm">
-          <span className="font-bold">{displayName}</span>
+          {canOpenAgentProfile ? (
+            <button
+              type="button"
+              onClick={openAgentProfile}
+              className="font-bold text-left hover:underline focus:outline-none focus:underline"
+            >
+              {displayName}
+            </button>
+          ) : (
+            <span className="font-bold">{displayName}</span>
+          )}
           {message.sender_type === 'user' && user?.username && displayName !== user.username && (
             <span className="text-[11px] font-mono text-text-secondary">@{user.username}</span>
           )}

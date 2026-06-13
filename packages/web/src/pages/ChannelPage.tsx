@@ -232,6 +232,14 @@ export function ChannelPage() {
     setParams(next);
   };
 
+  const openAgentProfile = (agentId: string) => {
+    const next = new URLSearchParams(params);
+    next.delete('thread');
+    next.set('profile', `agent:${agentId}`);
+    next.set('agentTab', 'profile');
+    setParams(next);
+  };
+
   const closeSidePanel = () => {
     const next = new URLSearchParams(params);
     next.delete('thread');
@@ -276,6 +284,7 @@ export function ChannelPage() {
                   : undefined
               }
               onOpenThread={openThread}
+              onOpenAgentProfile={openAgentProfile}
               onRunAborted={handleRunAborted}
               emptyHint={
                 showMessagesLoading

@@ -19,6 +19,7 @@ import type {
 } from './types.js';
 
 const execFileAsync = promisify(execFile);
+const COMPACT_TIMEOUT_MS = 120_000;
 
 type JsonRpcId = number | string;
 type JsonRpcMessage = {
@@ -749,5 +750,170 @@ export class CodexAppServerAdapter implements CLIAdapter {
         }
       })();
     });
+  }
+}
+
+export interface CompactCodexThreadResult {
+  ok: boolean;
+  threadId: string;
+  duration_ms: number;
+}
+
+export async function compactCodexThread(input: {
+  threadId: string;
+  workingDirectory?: string;
+  model?: string | null;
+}): Promise<CompactCodexThreadResult> {
+  const start = Date.now();
+  const child = spawn('codex', ['app-server', '--listen', 'stdio://'], {
+    cwd: input.workingDirectory,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+
+  let nextRequestId = 1;
+  let stdoutBuf = '';
+  const pendingRequests = new Map<JsonRpcId, {
+    resolve: (value: unknown) => void;
+    reject: (error: Error) => void;
+  }>();
+  let compacted = false;
+  let settled = false;
+  let lastError = '';
+
+  const send = (message: JsonRpcMessage) => {
+    if (!child.stdin || child.stdin.destroyed) return;
+    child.stdin.write(`${JSON.stringify(message)}\n`);
+  };
+
+  const request = (method: string, requestParams: Record<string, unknown> | undefined) => {
+    const id = nextRequestId++;
+    return new Promise<unknown>((resolve, reject) => {
+      pendingRequests.set(id, { resolve, reject });
+      send({ id, method, params: requestParams });
+    });
+  };
+
+  const cleanup = () => {
+    try {
+      child.kill('SIGTERM');
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const rejectPending = (error: Error) => {
+    for (const pending of pendingRequests.values()) {
+      pending.reject(error);
+    }
+    pendingRequests.clear();
+  };
+
+  const waitForCompaction = () =>
+    new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('Timed out waiting for Codex compaction to complete'));
+      }, COMPACT_TIMEOUT_MS);
+      const poll = () => {
+        if (compacted) {
+          clearTimeout(timer);
+          resolve();
+          return;
+        }
+        if (settled) {
+          clearTimeout(timer);
+          reject(new Error(lastError || 'Codex app-server exited before compaction completed'));
+          return;
+        }
+        setTimeout(poll, 100);
+      };
+      poll();
+    });
+
+  const handleMessage = (message: JsonRpcMessage) => {
+    if (message.id !== undefined && (message.result !== undefined || message.error)) {
+      const pending = pendingRequests.get(message.id);
+      if (!pending) return;
+      pendingRequests.delete(message.id);
+      if (message.error) {
+        pending.reject(new Error(message.error.message ?? 'Codex app-server request failed'));
+      } else {
+        pending.resolve(message.result);
+      }
+      return;
+    }
+
+    if (!message.method) return;
+    if (message.method === 'thread/compacted') {
+      compacted = true;
+      return;
+    }
+    if (message.method === 'item/completed') {
+      const item = message.params?.item;
+      if (item && typeof item === 'object') {
+        const record = item as Record<string, unknown>;
+        if (record.type === 'contextCompaction') compacted = true;
+      }
+    }
+  };
+
+  child.stdout?.on('data', (chunk: Buffer) => {
+    stdoutBuf += chunk.toString('utf8');
+    let idx: number;
+    while ((idx = stdoutBuf.indexOf('\n')) >= 0) {
+      const line = stdoutBuf.slice(0, idx);
+      stdoutBuf = stdoutBuf.slice(idx + 1);
+      if (!line.trim()) continue;
+      try {
+        handleMessage(JSON.parse(line) as JsonRpcMessage);
+      } catch {
+        /* ignore non-json lines */
+      }
+    }
+  });
+
+  child.stderr?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString('utf8').trim();
+    if (text) lastError = text.slice(0, 500);
+  });
+
+  child.on('error', (err) => {
+    lastError = err.message;
+    settled = true;
+    rejectPending(err);
+  });
+  child.on('close', () => {
+    settled = true;
+    rejectPending(new Error(lastError || 'Codex app-server exited'));
+  });
+
+  try {
+    await request('initialize', {
+      clientInfo: {
+        name: 'openspace',
+        title: 'OpenSpace',
+        version: '0.0.1',
+      },
+      capabilities: {
+        experimentalApi: true,
+        requestAttestation: false,
+      },
+    });
+    send({ method: 'initialized' });
+
+    await request('thread/resume', {
+      threadId: input.threadId,
+      ...(input.workingDirectory ? { cwd: input.workingDirectory } : {}),
+      ...(normalizeModel(input.model) ? { model: normalizeModel(input.model) } : {}),
+    });
+    await request('thread/compact/start', { threadId: input.threadId });
+    await waitForCompaction();
+
+    return {
+      ok: true,
+      threadId: input.threadId,
+      duration_ms: Date.now() - start,
+    };
+  } finally {
+    cleanup();
   }
 }

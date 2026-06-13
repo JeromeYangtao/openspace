@@ -254,6 +254,11 @@ export const stopAgent = (id: string) =>
   request<{ ok: boolean }>(`/api/agents/${id}/stop`, { method: 'POST' });
 export const restartAgent = (id: string) =>
   request<{ ok: boolean }>(`/api/agents/${id}/restart`, { method: 'POST' });
+export const compactAgentSession = (id: string, channelId: string) =>
+  request<{ ok: boolean; threadId: string; duration_ms: number }>(`/api/agents/${id}/compact`, {
+    method: 'POST',
+    body: JSON.stringify({ channel_id: channelId }),
+  });
 export const getAgentActivity = (
   id: string,
   opts?: { channel_id?: string; limit?: number },

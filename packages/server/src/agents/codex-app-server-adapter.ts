@@ -17,6 +17,7 @@ import type {
   SpawnSpec,
   TokenUsageBreakdown,
 } from './types.js';
+import { parseTokenCountInfo } from './codex-session-log.js';
 
 const execFileAsync = promisify(execFile);
 const COMPACT_TIMEOUT_MS = 120_000;
@@ -190,8 +191,10 @@ function parseContextUsage(value: unknown): ContextUsageInfo | null {
     model_context_window: modelContextWindow,
     percent_used:
       modelContextWindow && modelContextWindow > 0
-        ? total.total_tokens / modelContextWindow
+        ? last.input_tokens / modelContextWindow
         : null,
+    context_percent: null,
+    input_tokens_in_latest_context: null,
   };
 }
 
@@ -581,6 +584,12 @@ export class CodexAppServerAdapter implements CLIAdapter {
 
           case 'thread/tokenUsage/updated': {
             const usage = parseContextUsage(notificationParams.tokenUsage);
+            if (usage) emit({ type: 'context_usage.updated', usage });
+            break;
+          }
+
+          case 'token_count': {
+            const usage = parseTokenCountInfo(notificationParams.info);
             if (usage) emit({ type: 'context_usage.updated', usage });
             break;
           }

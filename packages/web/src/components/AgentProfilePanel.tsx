@@ -600,6 +600,10 @@ function ContextUsageMeter({
   const window = usage.model_context_window
     ? formatTokenCount(usage.model_context_window)
     : 'unknown';
+  const contextPercent =
+    typeof usage.context_percent === 'number' && Number.isFinite(usage.context_percent)
+      ? usage.context_percent
+      : null;
   const canCompact = agent.runtime === 'codex' && !!usage.channelId;
 
   const onCompact = async () => {
@@ -624,13 +628,16 @@ function ContextUsageMeter({
           updated {new Date(usage.updatedAt).toLocaleTimeString()}
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-2">
+      <div className={cn('mt-2 grid gap-2', contextPercent === null ? 'grid-cols-3' : 'grid-cols-4')}>
+        {contextPercent !== null && (
+          <TokenStat label="Context used" value={formatContextPercent(contextPercent)} />
+        )}
         <TokenStat label="Session total" value={total} />
         <TokenStat label="Last turn" value={last} />
         <TokenStat label="Window limit" value={window} />
       </div>
       <div className="mt-2 text-[10px] font-mono leading-snug text-text-secondary">
-        Window limit is capacity. Session total is cumulative usage, not current context fill.
+        Context used is reported by Codex session logs. Session total is cumulative usage.
       </div>
       {canCompact && (
         <div className="mt-3">
@@ -671,6 +678,12 @@ function formatTokenCount(tokens: number): string {
     return `${(tokens / 1_000).toFixed(tokens >= 10_000 ? 0 : 1)}K`;
   }
   return `${tokens}`;
+}
+
+function formatContextPercent(value: number): string {
+  if (value >= 100) return '100%';
+  if (value >= 10) return `${value.toFixed(1)}%`;
+  return `${value.toFixed(2)}%`;
 }
 
 function formatDuration(ms: number): string {

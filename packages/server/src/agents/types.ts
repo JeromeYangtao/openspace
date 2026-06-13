@@ -62,6 +62,8 @@ export interface ContextUsageInfo {
   last: TokenUsageBreakdown;
   model_context_window: number | null;
   percent_used: number | null;
+  context_percent?: number | null;
+  input_tokens_in_latest_context?: number | null;
 }
 
 // =============================================================================

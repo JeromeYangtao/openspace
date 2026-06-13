@@ -73,7 +73,7 @@ export function Sidebar({
   };
 
   return (
-    <aside className="w-full bg-bg-sidebar border-r-2 border-black flex flex-col h-full min-w-0">
+    <aside className="w-full bg-bg-sidebar border-r-2 border-black flex flex-col h-full min-h-0 min-w-0 overflow-hidden">
       {/* Project 切换器（v1.0 CP5b，替换原静态 "OpenSpace" 标签，对齐原版 KaisTeam ▼） */}
       <ProjectSwitcher
         projects={projects}
@@ -115,7 +115,7 @@ export function Sidebar({
         </TabButton>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="sidebar-scroll flex-1 min-h-0 overflow-y-auto">
         {sidebarTab === 'chat' ? (
           <ChatTabContent
             channels={channels}

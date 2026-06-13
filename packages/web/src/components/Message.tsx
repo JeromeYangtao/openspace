@@ -129,7 +129,7 @@ export function Message({
         <button
           type="button"
           onClick={openAgentProfile}
-          className="h-fit rounded focus:outline-none focus:ring-2 focus:ring-black"
+          className="h-fit rounded focus:outline-none hover:opacity-90"
           title={`Open ${displayName} profile`}
           aria-label={`Open ${displayName} profile`}
         >

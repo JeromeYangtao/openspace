@@ -12,6 +12,7 @@ import { canAccessChannel } from '../auth/channel-access.js';
 import { getUserFromRequest } from '../auth/session.js';
 import { abortSingleAgentRun } from '../agents/run-manager.js';
 import { compactCodexThread } from '../agents/codex-app-server-adapter.js';
+import { readCodexSessionContextUsage } from '../agents/codex-session-log.js';
 
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
   // 列出 agent；可选 ?project_id= 过滤
@@ -240,6 +241,54 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       reply.code(500);
       return { error: (e as Error).message };
     }
+  });
+
+  app.get('/api/agents/:id/context-usage', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const query = req.query as { channel_id?: string };
+    const channelId = query.channel_id;
+    if (!channelId) {
+      reply.code(400);
+      return { error: 'channel_id is required' };
+    }
+
+    const ctx = dbForResource('agents', id);
+    if (!ctx) {
+      reply.code(404);
+      return { error: 'agent not found' };
+    }
+    const agent = agentRepo.getById(ctx.db, id);
+    if (!agent) {
+      reply.code(404);
+      return { error: 'agent not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, channelId, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
+    if (agent.runtime !== 'codex') {
+      reply.code(400);
+      return { error: 'context usage is only available for Codex agents' };
+    }
+
+    const sessionId = runtimeSessionRepo.get(ctx.db, {
+      runtime: agent.runtime,
+      agent_id: agent.id,
+      channel_id: channelId,
+    });
+    if (!sessionId) {
+      reply.code(404);
+      return { error: 'no Codex session found for this agent in this channel' };
+    }
+
+    const usage = await readCodexSessionContextUsage({ sessionId });
+    if (!usage) {
+      reply.code(404);
+      return { error: 'no Codex token_count found for this session' };
+    }
+
+    return usage;
   });
 
   app.get('/api/agents/:id/activity', async (req, reply) => {

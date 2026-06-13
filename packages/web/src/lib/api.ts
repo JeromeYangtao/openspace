@@ -5,6 +5,7 @@
 import type {
   Agent,
   AgentActivity,
+  AgentContextUsage,
   AgentFeedback,
   AgentRun,
   AgentSkill,
@@ -259,6 +260,10 @@ export const compactAgentSession = (id: string, channelId: string) =>
     method: 'POST',
     body: JSON.stringify({ channel_id: channelId }),
   });
+export const getAgentContextUsage = (id: string, channelId: string) =>
+  request<AgentContextUsage>(
+    `/api/agents/${id}/context-usage?channel_id=${encodeURIComponent(channelId)}`,
+  );
 export const getAgentActivity = (
   id: string,
   opts?: { channel_id?: string; limit?: number },

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Agent, AgentRunStatus, AgentStatus } from '@openspace/shared';
+import type { Agent, AgentContextUsage, AgentRunStatus, AgentStatus } from '@openspace/shared';
 import { listActiveAgentRuns, listAgents } from '../lib/api';
 
 /**
@@ -22,6 +22,12 @@ export interface ActiveRun {
   startedAt: number;
 }
 
+export interface AgentContextUsageSnapshot extends AgentContextUsage {
+  agentId: string;
+  channelId: string;
+  updatedAt: number;
+}
+
 interface AgentsState {
   agents: Agent[];
   loaded: boolean;
@@ -34,6 +40,7 @@ interface AgentsState {
    * idle / 清除 run 时也清除这个 entry。
    */
   runStartedAtByAgentChannel: Map<string, Map<string, number>>;
+  contextUsageByAgentChannel: Map<string, Map<string, AgentContextUsageSnapshot>>;
 
   refresh: () => Promise<void>;
   refreshActiveRuns: () => Promise<void>;
@@ -41,12 +48,14 @@ interface AgentsState {
   remove: (id: string) => void;
   setChannelRunStatus: (agentId: string, channelId: string, status: AgentRunStatus) => void;
   clearChannelRun: (agentId: string, channelId: string) => void;
+  setContextUsage: (agentId: string, channelId: string, usage: AgentContextUsage) => void;
   /** 是否有任意活跃 run（thinking / working） */
   isAgentActive: (agentId: string) => boolean;
   /** 派生该 agent 的展示状态（任意活跃 run 优先；否则 'idle'） */
   getDerivedStatus: (agentId: string) => AgentStatus;
   /** 该 agent 在指定 channel 的 run 状态（无活跃 run 返回 undefined） */
   getChannelRunStatus: (agentId: string, channelId: string) => AgentRunStatus | undefined;
+  getLatestContextUsage: (agentId: string) => AgentContextUsageSnapshot | undefined;
   /** Sprint 8 / Lo-22: 该 channel 内所有活跃 (status != idle) 的 runs */
   getActiveRunsInChannel: (channelId: string) => ActiveRun[];
   getById: (id: string) => Agent | undefined;
@@ -59,6 +68,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
   loaded: false,
   runByAgentChannel: new Map(),
   runStartedAtByAgentChannel: new Map(),
+  contextUsageByAgentChannel: new Map(),
 
   refresh: async () => {
     const agents = await listAgents();
@@ -102,10 +112,13 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
       nextMap.delete(id);
       const nextStart = new Map(s.runStartedAtByAgentChannel);
       nextStart.delete(id);
+      const nextUsage = new Map(s.contextUsageByAgentChannel);
+      nextUsage.delete(id);
       return {
         agents: s.agents.filter((a) => a.id !== id),
         runByAgentChannel: nextMap,
         runStartedAtByAgentChannel: nextStart,
+        contextUsageByAgentChannel: nextUsage,
       };
     }),
 
@@ -135,6 +148,22 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
         runByAgentChannel: nextMap,
         runStartedAtByAgentChannel: nextStart,
       };
+    }),
+
+  setContextUsage: (agentId, channelId, usage) =>
+    set((s) => {
+      const next = new Map(s.contextUsageByAgentChannel);
+      const inner = new Map(
+        next.get(agentId) ?? new Map<string, AgentContextUsageSnapshot>(),
+      );
+      inner.set(channelId, {
+        ...usage,
+        agentId,
+        channelId,
+        updatedAt: Date.now(),
+      });
+      next.set(agentId, inner);
+      return { contextUsageByAgentChannel: next };
     }),
 
   clearChannelRun: (agentId, channelId) =>
@@ -187,6 +216,12 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 
   getChannelRunStatus: (agentId, channelId) => {
     return get().runByAgentChannel.get(agentId)?.get(channelId);
+  },
+
+  getLatestContextUsage: (agentId) => {
+    const inner = get().contextUsageByAgentChannel.get(agentId);
+    if (!inner) return undefined;
+    return Array.from(inner.values()).sort((a, b) => b.updatedAt - a.updatedAt)[0];
   },
 
   getActiveRunsInChannel: (channelId) => {

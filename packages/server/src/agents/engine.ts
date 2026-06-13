@@ -422,6 +422,9 @@ function toAgentActivityPayload(event: CLIEvent): AgentActivityPayload {
   if (event.type === 'approval.required') {
     return event;
   }
+  if (event.type === 'context_usage.updated') {
+    return event;
+  }
   return event;
 }
 

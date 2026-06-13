@@ -11,9 +11,11 @@ import type {
   BuildCommandParams,
   CLIAdapter,
   CLIEvent,
+  ContextUsageInfo,
   RunnerOptions,
   RunnerResult,
   SpawnSpec,
+  TokenUsageBreakdown,
 } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -152,6 +154,44 @@ function errorMessageFromNotification(params: Record<string, unknown>): string {
     if (typeof message === 'string' && message) return message;
   }
   return 'Codex app-server error';
+}
+
+function numberField(record: Record<string, unknown>, key: string): number {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function parseTokenUsageBreakdown(value: unknown): TokenUsageBreakdown | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  return {
+    total_tokens: numberField(record, 'totalTokens'),
+    input_tokens: numberField(record, 'inputTokens'),
+    cached_input_tokens: numberField(record, 'cachedInputTokens'),
+    output_tokens: numberField(record, 'outputTokens'),
+    reasoning_output_tokens: numberField(record, 'reasoningOutputTokens'),
+  };
+}
+
+function parseContextUsage(value: unknown): ContextUsageInfo | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const total = parseTokenUsageBreakdown(record.total);
+  const last = parseTokenUsageBreakdown(record.last);
+  if (!total || !last) return null;
+  const modelContextWindow =
+    typeof record.modelContextWindow === 'number' && Number.isFinite(record.modelContextWindow)
+      ? record.modelContextWindow
+      : null;
+  return {
+    total,
+    last,
+    model_context_window: modelContextWindow,
+    percent_used:
+      modelContextWindow && modelContextWindow > 0
+        ? total.total_tokens / modelContextWindow
+        : null,
+  };
 }
 
 function approvalTitle(method: string): string {
@@ -535,6 +575,12 @@ export class CodexAppServerAdapter implements CLIAdapter {
             } else if (record.type === 'reasoning') {
               emit({ type: 'thinking.completed' });
             }
+            break;
+          }
+
+          case 'thread/tokenUsage/updated': {
+            const usage = parseContextUsage(notificationParams.tokenUsage);
+            if (usage) emit({ type: 'context_usage.updated', usage });
             break;
           }
 

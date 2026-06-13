@@ -31,6 +31,11 @@ export function initWSBridge(): void {
         break;
       case 'agent_activity':
         useMessagesStore.getState().appendActivity(event);
+        if (event.event.type === 'context_usage.updated') {
+          useAgentsStore
+            .getState()
+            .setContextUsage(event.agent_id, event.channel_id, event.event.usage);
+        }
         if (!useMessagesStore.getState().hasMessage(event.channel_id, event.message_id)) {
           useMessagesStore.getState().scheduleChannelRefresh(event.channel_id, 200);
         }

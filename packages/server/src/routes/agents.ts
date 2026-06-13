@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { ReasoningEffort, Runtime } from '@openspace/shared';
-import { agentRepo, agentRunRepo, activityRepo, workflowRepo } from '../db/repos.js';
+import { agentRepo, agentRunRepo, activityRepo, runtimeSessionRepo, workflowRepo } from '../db/repos.js';
 import { deriveResponsibilitiesForWorkflow } from '../workflows/derive-responsibilities.js';
+import { projectsService } from '../config/projects-service.js';
 import {
   dbForProjectId,
   dbForResource,
@@ -10,6 +11,7 @@ import {
 import { canAccessChannel } from '../auth/channel-access.js';
 import { getUserFromRequest } from '../auth/session.js';
 import { abortSingleAgentRun } from '../agents/run-manager.js';
+import { compactCodexThread } from '../agents/codex-app-server-adapter.js';
 
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
   // 列出 agent；可选 ?project_id= 过滤
@@ -184,6 +186,60 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       return { error: 'agent not found' };
     }
     return { ok: true };
+  });
+
+  app.post('/api/agents/:id/compact', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = req.body as { channel_id?: string };
+    const channelId = body?.channel_id;
+    if (!channelId) {
+      reply.code(400);
+      return { error: 'channel_id is required' };
+    }
+
+    const ctx = dbForResource('agents', id);
+    if (!ctx) {
+      reply.code(404);
+      return { error: 'agent not found' };
+    }
+    const agent = agentRepo.getById(ctx.db, id);
+    if (!agent) {
+      reply.code(404);
+      return { error: 'agent not found' };
+    }
+    const user = getUserFromRequest(req);
+    if (!user || !canAccessChannel(ctx.db, channelId, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
+    if (agent.runtime !== 'codex') {
+      reply.code(400);
+      return { error: 'manual compact is only available for Codex agents' };
+    }
+
+    const sessionId = runtimeSessionRepo.get(ctx.db, {
+      runtime: agent.runtime,
+      agent_id: agent.id,
+      channel_id: channelId,
+    });
+    if (!sessionId) {
+      reply.code(404);
+      return { error: 'no Codex session found for this agent in this channel' };
+    }
+
+    const project = projectsService.getById(ctx.projectId);
+    try {
+      const result = await compactCodexThread({
+        threadId: sessionId,
+        workingDirectory: project?.workspace_path,
+        model: agent.model,
+      });
+      return result;
+    } catch (e) {
+      req.log.warn({ err: e, agent_id: id, channel_id: channelId }, '[agents] compact failed');
+      reply.code(500);
+      return { error: (e as Error).message };
+    }
   });
 
   app.get('/api/agents/:id/activity', async (req, reply) => {

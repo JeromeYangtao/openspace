@@ -14,6 +14,7 @@ import type { Agent, AgentActivity, AgentFeedback, AgentStatus, ContextSize, Rea
 import { cn } from '../lib/cn';
 import {
   applyAgentFeedback,
+  compactAgentSession,
   deleteAgent,
   getAgentActivity,
   getRuntimeModels,
@@ -464,7 +465,7 @@ function ProfileTab({
         </div>
       </div>
 
-      {contextUsage && <ContextUsageMeter usage={contextUsage} />}
+      {contextUsage && <ContextUsageMeter agent={agent} usage={contextUsage} />}
 
       <ProfileField label="DISPLAY NAME">
         <InlineEdit value={agent.name} maxLength={80} onSave={saveName} />
@@ -586,40 +587,78 @@ function ProfileTab({
 }
 
 function ContextUsageMeter({
+  agent,
   usage,
 }: {
+  agent: Agent;
   usage: AgentContextUsageSnapshot;
 }) {
-  const percent = usage.percent_used;
-  if (percent === null) return null;
-  const clamped = Math.max(0, Math.min(1, percent));
-  const percentLabel = `${Math.round(clamped * 100)}%`;
-  const tone =
-    clamped >= 0.85
-      ? 'bg-[#f06a6a]'
-      : clamped >= 0.7
-        ? 'bg-accent-orange'
-        : clamped >= 0.5
-          ? 'bg-accent-yellow'
-          : 'bg-accent-teal';
+  const [compacting, setCompacting] = useState(false);
+  const [compactMessage, setCompactMessage] = useState<string | null>(null);
   const total = formatTokenCount(usage.total.total_tokens);
+  const last = formatTokenCount(usage.last.total_tokens);
   const window = usage.model_context_window
     ? formatTokenCount(usage.model_context_window)
     : 'unknown';
+  const canCompact = agent.runtime === 'codex' && !!usage.channelId;
+
+  const onCompact = async () => {
+    if (!canCompact || compacting) return;
+    setCompacting(true);
+    setCompactMessage(null);
+    try {
+      const result = await compactAgentSession(agent.id, usage.channelId);
+      setCompactMessage(`Compacted in ${formatDuration(result.duration_ms)}.`);
+    } catch (e) {
+      setCompactMessage(`Compact failed: ${(e as Error).message}`);
+    } finally {
+      setCompacting(false);
+    }
+  };
 
   return (
     <div className="border-2 border-black rounded bg-bg-card p-3">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="section-header">CONTEXT</div>
-        <div className="font-mono text-sm font-bold tabular-nums">{percentLabel}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="section-header">SESSION TOKENS</div>
+        <div className="font-mono text-[10px] text-text-secondary">
+          updated {new Date(usage.updatedAt).toLocaleTimeString()}
+        </div>
       </div>
-      <div className="h-3 border-2 border-black rounded bg-bg-main overflow-hidden">
-        <div className={cn('h-full', tone)} style={{ width: percentLabel }} />
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <TokenStat label="Session total" value={total} />
+        <TokenStat label="Last turn" value={last} />
+        <TokenStat label="Window limit" value={window} />
       </div>
-      <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-mono text-text-secondary">
-        <span>{total} used</span>
-        <span>{window} window</span>
+      <div className="mt-2 text-[10px] font-mono leading-snug text-text-secondary">
+        Window limit is capacity. Session total is cumulative usage, not current context fill.
       </div>
+      {canCompact && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => void onCompact()}
+            disabled={compacting}
+            className="w-full px-3 py-1.5 border-2 border-black rounded bg-accent-yellow hover:brightness-105 disabled:opacity-60 font-bold text-xs"
+            title="Ask Codex to compact this agent's current channel session"
+          >
+            {compacting ? 'Compacting...' : 'Compact session'}
+          </button>
+          {compactMessage && (
+            <div className="mt-2 text-[10px] font-mono text-text-secondary leading-snug">
+              {compactMessage}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TokenStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 border-2 border-black/20 rounded bg-bg-main px-2 py-1">
+      <div className="text-[10px] font-mono uppercase text-text-secondary truncate">{label}</div>
+      <div className="font-mono text-sm font-bold tabular-nums truncate">{value}</div>
     </div>
   );
 }
@@ -632,6 +671,11 @@ function formatTokenCount(tokens: number): string {
     return `${(tokens / 1_000).toFixed(tokens >= 10_000 ? 0 : 1)}K`;
   }
   return `${tokens}`;
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 function ActivityTab({ agent }: { agent: Agent }) {

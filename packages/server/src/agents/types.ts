@@ -9,6 +9,7 @@
 export type CLIEvent =
   | { type: 'session.started'; session_id: string; meta?: Record<string, unknown> }
   | { type: 'session.completed'; duration_ms?: number; usage?: UsageInfo }
+  | { type: 'context_usage.updated'; usage: ContextUsageInfo }
   | { type: 'thinking.delta'; text: string }
   | { type: 'thinking.completed' }
   | { type: 'text.delta'; text: string }
@@ -46,6 +47,21 @@ export interface UsageInfo {
   cached_input_tokens?: number;
   output_tokens?: number;
   extra?: Record<string, unknown>;
+}
+
+export interface TokenUsageBreakdown {
+  total_tokens: number;
+  input_tokens: number;
+  cached_input_tokens: number;
+  output_tokens: number;
+  reasoning_output_tokens: number;
+}
+
+export interface ContextUsageInfo {
+  total: TokenUsageBreakdown;
+  last: TokenUsageBreakdown;
+  model_context_window: number | null;
+  percent_used: number | null;
 }
 
 // =============================================================================

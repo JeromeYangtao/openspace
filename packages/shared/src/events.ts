@@ -101,6 +101,10 @@ export type AgentActivityPayload =
       duration_ms?: number;
       usage?: Record<string, unknown>;
     }
+  | {
+      type: 'context_usage.updated';
+      usage: AgentContextUsage;
+    }
   | { type: 'thinking.delta'; text: string }
   | { type: 'thinking.completed' }
   | { type: 'text.delta'; text: string }
@@ -133,6 +137,21 @@ export type AgentActivityPayload =
       supported: boolean;
     }
   | { type: 'error'; message: string; code?: string; recoverable?: boolean };
+
+export interface AgentTokenUsageBreakdown {
+  total_tokens: number;
+  input_tokens: number;
+  cached_input_tokens: number;
+  output_tokens: number;
+  reasoning_output_tokens: number;
+}
+
+export interface AgentContextUsage {
+  total: AgentTokenUsageBreakdown;
+  last: AgentTokenUsageBreakdown;
+  model_context_window: number | null;
+  percent_used: number | null;
+}
 
 // =============================================================================
 // 系统事件（嵌套进 ServerEvent.system_event）

@@ -26,7 +26,7 @@ import {
   stopAgent,
   updateAgent,
 } from '../lib/api';
-import { useAgentsStore } from '../stores/agents';
+import { useAgentsStore, type AgentContextUsageSnapshot } from '../stores/agents';
 import { useChannelsStore } from '../stores/channels';
 import { useProjectsStore } from '../stores/projects';
 import { dmPath } from '../lib/routes';
@@ -395,6 +395,7 @@ function ProfileTab({
   const upsertAgent = useAgentsStore((s) => s.upsert);
   // CP8.2：派生 status（任意 channel 活跃 → 该 run 状态；否则用 agent.status）
   const derivedStatus = useAgentsStore((s) => s.getDerivedStatus(agent.id));
+  const contextUsage = useAgentsStore((s) => s.getLatestContextUsage(agent.id));
 
   const saveName = async (v: string) => {
     if (!v) return;
@@ -462,6 +463,8 @@ function ProfileTab({
           <div className="text-sm font-mono text-text-secondary mt-0.5">@{agent.name}</div>
         </div>
       </div>
+
+      {contextUsage && <ContextUsageMeter usage={contextUsage} />}
 
       <ProfileField label="DISPLAY NAME">
         <InlineEdit value={agent.name} maxLength={80} onSave={saveName} />
@@ -580,6 +583,55 @@ function ProfileTab({
       </div>
     </div>
   );
+}
+
+function ContextUsageMeter({
+  usage,
+}: {
+  usage: AgentContextUsageSnapshot;
+}) {
+  const percent = usage.percent_used;
+  if (percent === null) return null;
+  const clamped = Math.max(0, Math.min(1, percent));
+  const percentLabel = `${Math.round(clamped * 100)}%`;
+  const tone =
+    clamped >= 0.85
+      ? 'bg-[#f06a6a]'
+      : clamped >= 0.7
+        ? 'bg-accent-orange'
+        : clamped >= 0.5
+          ? 'bg-accent-yellow'
+          : 'bg-accent-teal';
+  const total = formatTokenCount(usage.total.total_tokens);
+  const window = usage.model_context_window
+    ? formatTokenCount(usage.model_context_window)
+    : 'unknown';
+
+  return (
+    <div className="border-2 border-black rounded bg-bg-card p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="section-header">CONTEXT</div>
+        <div className="font-mono text-sm font-bold tabular-nums">{percentLabel}</div>
+      </div>
+      <div className="h-3 border-2 border-black rounded bg-bg-main overflow-hidden">
+        <div className={cn('h-full', tone)} style={{ width: percentLabel }} />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-mono text-text-secondary">
+        <span>{total} used</span>
+        <span>{window} window</span>
+      </div>
+    </div>
+  );
+}
+
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${(tokens / 1_000_000).toFixed(tokens >= 10_000_000 ? 0 : 1)}M`;
+  }
+  if (tokens >= 1_000) {
+    return `${(tokens / 1_000).toFixed(tokens >= 10_000 ? 0 : 1)}K`;
+  }
+  return `${tokens}`;
 }
 
 function ActivityTab({ agent }: { agent: Agent }) {

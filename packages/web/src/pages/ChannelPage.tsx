@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { ChatMessage } from '@openspace/shared';
 import { useChannelsStore } from '../stores/channels';
@@ -7,7 +7,7 @@ import { useAuthStore } from '../stores/auth';
 import { useProjectsStore } from '../stores/projects';
 import { useMessagesStore } from '../stores/messages';
 import { wsClient } from '../lib/ws';
-import { getChannelAgents, getChannelUsers, stopAllAgents } from '../lib/api';
+import { getChannel, getChannelAgents, getChannelUsers, stopAllAgents } from '../lib/api';
 import { onChannelAgentsChanged } from '../lib/channel-agent-events';
 import { projectChannelPath, projectIndexPath } from '../lib/routes';
 import { useChannelCommands } from '../lib/useChannelCommands';
@@ -24,6 +24,26 @@ import { ChannelSettingsDialog } from '../components/ChannelSettingsDialog';
 import { ResponsiveSidePanel } from '../components/AppShell';
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
+const LAST_MENTIONED_AGENT_STORAGE_KEY = 'openspace:last-mentioned-agent-by-channel';
+
+function loadRememberedAgentsByChannel(): Record<string, string | undefined> {
+  try {
+    const raw = window.localStorage.getItem(LAST_MENTIONED_AGENT_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveRememberedAgentsByChannel(next: Record<string, string | undefined>) {
+  try {
+    window.localStorage.setItem(LAST_MENTIONED_AGENT_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    /* localStorage may be unavailable; in-memory state still works for this session. */
+  }
+}
 
 export function ChannelPage() {
   const { projectName, channelId } = useParams<{ projectName: string; channelId: string }>();
@@ -41,6 +61,7 @@ export function ChannelPage() {
   const refreshActiveRuns = useAgentsStore((s) => s.refreshActiveRuns);
   const profileAgent = profileAgentId ? allAgents.find((a) => a.id === profileAgentId) : null;
   const projects = useProjectsStore((s) => s.projects);
+  const projectsLoaded = useProjectsStore((s) => s.loaded);
   // 关键：selector 返回稳定引用（不在 selector 里创建新数组），避免 re-render 循环
   const byChannel = useMessagesStore((s) => s.byChannel);
   const messages = channelId ? (byChannel.get(channelId) ?? EMPTY_MESSAGES) : EMPTY_MESSAGES;
@@ -63,11 +84,18 @@ export function ChannelPage() {
   const channel = channels.find((c) => c.id === channelId);
   const upsertChannel = useChannelsStore((s) => s.upsert);
   const removeChannel = useChannelsStore((s) => s.remove);
+  const [channelLookup, setChannelLookup] = useState<{
+    channelId: string | null;
+    status: 'idle' | 'loading' | 'not_found' | 'error';
+  }>({ channelId: null, status: 'idle' });
   const [stopAllOpen, setStopAllOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState<{ open: boolean; tab: 'settings' | 'members' }>({
     open: false,
     tab: 'settings',
   });
+  const [rememberedAgentByChannel, setRememberedAgentByChannel] = useState<
+    Record<string, string | undefined>
+  >(loadRememberedAgentsByChannel);
 
   useEffect(() => {
     if (!channelId) return;
@@ -175,11 +203,57 @@ export function ChannelPage() {
     () => allAgents.filter((a) => channelAgentIdSet.has(a.id)),
     [allAgents, channelAgentIdSet],
   );
+  const findMentionedAgentName = useCallback((content: string) => {
+    for (const agent of channelAgents) {
+      const escaped = agent.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`(^|[^\\w@])@${escaped}(?=$|[^A-Za-z0-9_\\-\\u4e00-\\u9fa5])`);
+      if (re.test(content)) return agent.name;
+    }
+    return null;
+  }, [channelAgents]);
+  const rememberedAgentName = channelId ? rememberedAgentByChannel[channelId] : undefined;
+  const defaultMessageValue =
+    rememberedAgentName && channelAgents.some((a) => a.name === rememberedAgentName)
+      ? `@${rememberedAgentName} `
+      : '';
   const canManageChannel = isAdmin || (!!currentUser && channelUserIds.includes(currentUser.id));
+
+  useEffect(() => {
+    if (!channelId || !channelsLoaded || channel) return;
+
+    let cancelled = false;
+    setChannelLookup({ channelId, status: 'loading' });
+    void getChannel(channelId)
+      .then((loadedChannel) => {
+        if (cancelled) return;
+        upsertChannel(loadedChannel);
+        setChannelLookup({ channelId, status: 'idle' });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setChannelLookup({ channelId, status: 'not_found' });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [channel, channelId, channelsLoaded, upsertChannel]);
+
   if (!channelId || !projectName) return null;
 
   // 等 channels 加载完再判断 not-found，避免刷新时闪一下错误页
   if (!channelsLoaded) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-text-secondary font-mono">
+        Loading…
+      </div>
+    );
+  }
+
+  if (
+    !channel &&
+    (channelLookup.channelId !== channelId || channelLookup.status !== 'not_found')
+  ) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-secondary font-mono">
         Loading…
@@ -199,6 +273,13 @@ export function ChannelPage() {
   // v0 兼容数据可能 channel.project_id 为 null，此时不强制校验
   if (channel.project_id) {
     const project = projects.find((p) => p.name === projectName);
+    if (!projectsLoaded) {
+      return (
+        <div className="flex-1 flex items-center justify-center text-text-secondary font-mono">
+          Loading…
+        </div>
+      );
+    }
     if (!project || channel.project_id !== project.id) {
       // channel 不属于该 project：跳到该 channel 自己的 project
       const realProject = projects.find((p) => p.id === channel.project_id);
@@ -210,6 +291,17 @@ export function ChannelPage() {
   }
 
   const send = (content: string, opts?: { asTask?: boolean }) => {
+    const mentionedAgentName = findMentionedAgentName(content);
+    if (mentionedAgentName) {
+      setRememberedAgentByChannel((current) => {
+        const next = {
+          ...current,
+          [channelId]: mentionedAgentName,
+        };
+        saveRememberedAgentsByChannel(next);
+        return next;
+      });
+    }
     wsClient.send({
       type: 'send_message',
       channel_id: channelId,
@@ -294,6 +386,7 @@ export function ChannelPage() {
             />
             <MessageInput
               placeholder={`Message #${channel.name} — @AgentName 或 @all 触发响应`}
+              defaultValue={defaultMessageValue}
               onSend={send}
               commands={channelCommands}
               mentionAgents={channelAgents}

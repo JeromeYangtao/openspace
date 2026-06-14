@@ -52,13 +52,19 @@ export function MessageInput({
   const lastDefaultValueRef = useRef(defaultValue);
 
   useEffect(() => {
+    let nextCursor: number | null = null;
     setValue((current) => {
       const previousDefault = lastDefaultValueRef.current;
       lastDefaultValueRef.current = defaultValue;
       if (current && current !== previousDefault) return current;
-      setCursorPos(defaultValue.length);
+      nextCursor = defaultValue.length;
       return defaultValue;
     });
+    if (nextCursor === null) return;
+    setCursorPos(nextCursor);
+    window.setTimeout(() => {
+      ref.current?.setSelectionRange(nextCursor, nextCursor);
+    }, 0);
   }, [defaultValue]);
 
   // 当且仅当：第一行以 / 开头 + commands 非空 + 用户没按 Esc 关闭

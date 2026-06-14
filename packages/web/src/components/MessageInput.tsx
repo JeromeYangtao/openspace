@@ -22,6 +22,7 @@ export interface CommandHint {
 
 interface Props {
   placeholder?: string;
+  defaultValue?: string;
   showAsTask?: boolean;
   onSend: (content: string, opts?: { asTask?: boolean }) => void;
   disabled?: boolean;
@@ -33,6 +34,7 @@ interface Props {
 
 export function MessageInput({
   placeholder = 'Message',
+  defaultValue = '',
   showAsTask = true,
   onSend,
   disabled,
@@ -47,6 +49,17 @@ export function MessageInput({
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const isComposingRef = useRef(false);
   const compositionJustEndedRef = useRef(false);
+  const lastDefaultValueRef = useRef(defaultValue);
+
+  useEffect(() => {
+    setValue((current) => {
+      const previousDefault = lastDefaultValueRef.current;
+      lastDefaultValueRef.current = defaultValue;
+      if (current && current !== previousDefault) return current;
+      setCursorPos(defaultValue.length);
+      return defaultValue;
+    });
+  }, [defaultValue]);
 
   // 当且仅当：第一行以 / 开头 + commands 非空 + 用户没按 Esc 关闭
   const hintQuery = useMemo(() => {
@@ -118,11 +131,14 @@ export function MessageInput({
     const text = value.trim();
     if (!text || disabled) return;
     onSend(text, { asTask });
-    setValue('');
+    setValue(defaultValue);
     setAsTask(false);
-    setCursorPos(0);
+    setCursorPos(defaultValue.length);
     setDismissedMentionKey(null);
-    setTimeout(() => ref.current?.focus(), 0);
+    setTimeout(() => {
+      ref.current?.focus();
+      ref.current?.setSelectionRange(defaultValue.length, defaultValue.length);
+    }, 0);
   };
 
   const applyHint = (cmd: CommandHint) => {

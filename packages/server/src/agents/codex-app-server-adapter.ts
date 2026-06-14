@@ -124,6 +124,15 @@ function policyAmendmentFromParams(params: Record<string, unknown>): string | un
   );
 }
 
+function execPolicyAmendmentFromParams(params: Record<string, unknown>): unknown[] | null {
+  const amendment =
+    params.proposedExecpolicyAmendment ??
+    params.proposedExecPolicyAmendment ??
+    params.execpolicyAmendment ??
+    params.execPolicyAmendment;
+  return Array.isArray(amendment) ? amendment : null;
+}
+
 function approvalDetail(
   kind: 'command' | 'file_change' | 'permissions',
   params: Record<string, unknown>,
@@ -235,7 +244,16 @@ function decisionFor(
       : decision === 'approve_for_session'
         ? 'acceptForSession'
         : decision === 'approve_with_policy'
-          ? 'acceptWithExecpolicyAmendment'
+          ? (() => {
+              const amendment = execPolicyAmendmentFromParams(params);
+              return amendment
+                ? {
+                    acceptWithExecpolicyAmendment: {
+                      execpolicy_amendment: amendment,
+                    },
+                  }
+                : 'acceptForSession';
+            })()
         : decision === 'reject'
           ? 'decline'
           : 'cancel';

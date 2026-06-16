@@ -294,6 +294,10 @@ export interface PendingAgentApproval {
   command?: string;
   reason?: string;
   policyAmendment?: string;
+  channel_id?: string;
+  agent_id?: string;
+  run_id?: number;
+  message_id?: string;
   createdAt: number;
 }
 

@@ -37,6 +37,7 @@ import { projectsService } from '../config/projects-service.js';
 import { hub } from '../ws/hub.js';
 import { isEveryoneMention, parseMentions } from '../messaging/mentions.js';
 import { ActivityRecorder } from './activity-recorder.js';
+import { attachApprovalContext } from './approval-manager.js';
 import { concurrencyQueue } from './queue.js';
 import { runWithAdapter } from './runner.js';
 import { createAdapterForRuntime } from './adapter-factory.js';
@@ -225,6 +226,14 @@ export async function triggerAgent(
       {
         signal,
         onEvent: (event: CLIEvent) => {
+          if (event.type === 'approval.required' && event.call_id) {
+            attachApprovalContext(event.call_id, {
+              channel_id: ctx.channelId,
+              agent_id: agent.id,
+              run_id: run.id,
+              message_id: placeholder.id,
+            });
+          }
           activity.recordEvent(event);
           broadcastAgentActivity(
             ctx.channelId,

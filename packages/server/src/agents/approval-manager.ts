@@ -14,9 +14,20 @@ export interface PendingApproval {
   command?: string;
   reason?: string;
   policyAmendment?: string;
+  channel_id?: string;
+  agent_id?: string;
+  run_id?: number;
+  message_id?: string;
   createdAt: number;
   decide: (decision: ApprovalDecision) => void;
   cancel: () => void;
+}
+
+export interface ApprovalContext {
+  channel_id?: string;
+  agent_id?: string;
+  run_id?: number;
+  message_id?: string;
 }
 
 let nextApprovalId = 1;
@@ -37,6 +48,20 @@ export function resolveApproval(id: string, decision: ApprovalDecision): boolean
   if (!approval) return false;
   pending.delete(id);
   approval.decide(decision);
+  return true;
+}
+
+export function getPendingApproval(id: string): PendingApproval | null {
+  return pending.get(id) ?? null;
+}
+
+export function attachApprovalContext(id: string, context: ApprovalContext): boolean {
+  const approval = pending.get(id);
+  if (!approval) return false;
+  if (context.channel_id !== undefined) approval.channel_id = context.channel_id;
+  if (context.agent_id !== undefined) approval.agent_id = context.agent_id;
+  if (context.run_id !== undefined) approval.run_id = context.run_id;
+  if (context.message_id !== undefined) approval.message_id = context.message_id;
   return true;
 }
 

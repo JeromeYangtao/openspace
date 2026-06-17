@@ -94,6 +94,14 @@ export const changePassword = (data: { currentPassword: string; newPassword: str
     method: 'POST',
     body: JSON.stringify(data),
   });
+export const updateCurrentUserProfile = (data: {
+  username?: string;
+  displayName?: string | null;
+}) =>
+  request<AuthUser>('/api/auth/profile', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
 export const listUsers = () => request<AuthUser[]>('/api/users');
 export const listAdminUsers = () => request<AuthUser[]>('/api/admin/users');
 export const createUser = (data: {

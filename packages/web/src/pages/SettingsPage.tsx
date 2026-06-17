@@ -14,12 +14,44 @@ import { useUsersStore } from '../stores/users';
 export function SettingsPage() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const updateProfile = useAuthStore((s) => s.updateProfile);
+  const refreshDirectory = useUsersStore((s) => s.refresh);
 
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
   const [errorFlash, setErrorFlash] = useState<string | null>(null);
+  const [profileUsername, setProfileUsername] = useState(user?.username ?? '');
+  const [profileDisplayName, setProfileDisplayName] = useState(user?.display_name ?? '');
+  const [savingProfile, setSavingProfile] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
+
+  useEffect(() => {
+    setProfileUsername(user?.username ?? '');
+    setProfileDisplayName(user?.display_name ?? '');
+  }, [user?.username, user?.display_name]);
+
+  const profileChanged =
+    profileUsername.trim().toLowerCase() !== (user?.username ?? '') ||
+    profileDisplayName.trim() !== (user?.display_name ?? '');
+
+  async function handleSaveProfile() {
+    setSavingProfile(true);
+    setSavedFlash(null);
+    setErrorFlash(null);
+    try {
+      await updateProfile({
+        username: profileUsername,
+        displayName: profileDisplayName,
+      });
+      await refreshDirectory();
+      setSavedFlash('Profile updated.');
+    } catch (e) {
+      setErrorFlash(`Profile update failed: ${(e as Error).message}`);
+    } finally {
+      setSavingProfile(false);
+    }
+  }
 
   async function handleChangePassword() {
     setChangingPassword(true);
@@ -63,6 +95,37 @@ export function SettingsPage() {
           </div>
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-bold uppercase">Username</span>
+              <input
+                value={profileUsername}
+                onChange={(e) => setProfileUsername(e.target.value)}
+                autoComplete="username"
+                className="mt-1 w-full rounded border-2 border-black bg-bg-main px-3 py-2 font-mono text-sm focus:bg-white focus:outline-none"
+              />
+              <span className="mt-1 block text-[11px] font-mono text-text-secondary">
+                3-40 chars: lowercase letters, numbers, dot, underscore, dash.
+              </span>
+            </label>
+            <label className="block">
+              <span className="text-xs font-bold uppercase">Display name</span>
+              <input
+                value={profileDisplayName}
+                onChange={(e) => setProfileDisplayName(e.target.value)}
+                className="mt-1 w-full rounded border-2 border-black bg-bg-main px-3 py-2 font-mono text-sm focus:bg-white focus:outline-none"
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleSaveProfile()}
+            disabled={savingProfile || !profileUsername.trim() || !profileChanged}
+            className="mt-4 rounded border-2 border-black bg-accent-green px-4 py-2 text-sm font-bold shadow-[3px_3px_0_0_#000] hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {savingProfile ? 'Saving...' : 'Save profile'}
+          </button>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="text-xs font-bold uppercase">Current password</span>
               <input

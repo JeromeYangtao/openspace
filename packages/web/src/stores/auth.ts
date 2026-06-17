@@ -5,6 +5,7 @@ import {
   getCurrentUser,
   login,
   logout,
+  updateCurrentUserProfile,
   type AuthUser,
 } from '../lib/api';
 import { wsClient } from '../lib/ws';
@@ -16,6 +17,7 @@ interface AuthState {
   refresh: () => Promise<void>;
   bootstrap: (username: string, password: string) => Promise<void>;
   login: (username: string, password: string) => Promise<void>;
+  updateProfile: (data: { username?: string; displayName?: string | null }) => Promise<AuthUser>;
   logout: () => Promise<void>;
 }
 
@@ -43,6 +45,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (username, password) => {
     const { user } = await login({ username, password });
     set({ user, bootstrapRequired: false });
+  },
+
+  updateProfile: async (data) => {
+    const user = await updateCurrentUserProfile(data);
+    set({ user });
+    return user;
   },
 
   logout: async () => {

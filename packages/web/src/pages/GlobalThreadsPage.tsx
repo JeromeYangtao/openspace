@@ -4,6 +4,7 @@ import type { Agent, ChatMessage, Channel } from '@openspace/shared';
 import { listGlobalThreads } from '../lib/api';
 import { useAgentsStore } from '../stores/agents';
 import { useChannelsStore } from '../stores/channels';
+import { useUsersStore } from '../stores/users';
 import { channelPath } from '../lib/routes';
 import { Avatar } from '../components/Avatar';
 
@@ -12,6 +13,7 @@ export function GlobalThreadsPage() {
   const [loading, setLoading] = useState(true);
   const agents = useAgentsStore((s) => s.agents);
   const channels = useChannelsStore((s) => s.channels);
+  const usersById = useUsersStore((s) => s.usersById);
   const navigate = useNavigate();
 
   const agentsById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents]);
@@ -51,6 +53,7 @@ export function GlobalThreadsPage() {
               key={t.id}
               message={t}
               agent={t.sender_id ? agentsById.get(t.sender_id) : undefined}
+              user={t.sender_id ? usersById.get(t.sender_id) : undefined}
               channel={channelsById.get(t.channel_id)}
               onOpen={() =>
                 navigate(`${channelPath(t.channel_id)}?thread=${encodeURIComponent(t.id)}`)
@@ -66,16 +69,20 @@ export function GlobalThreadsPage() {
 function ThreadCard({
   message,
   agent,
+  user,
   channel,
   onOpen,
 }: {
   message: ChatMessage;
   agent?: Agent;
+  user?: { username: string; display_name: string | null };
   channel?: Channel;
   onOpen: () => void;
 }) {
   const senderName =
-    message.sender_type === 'agent' ? `@${agent?.name ?? 'Agent'}` : 'You';
+    message.sender_type === 'agent'
+      ? `@${agent?.name ?? 'Agent'}`
+      : (user?.username ?? 'User');
   return (
     <button
       onClick={onOpen}

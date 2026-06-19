@@ -95,7 +95,7 @@ function SavedRow({
   const senderName =
     message.sender_type === 'agent'
       ? `@${agent?.name ?? 'Agent'}`
-      : (user?.username ?? 'User');
+      : (user?.display_name ?? user?.username ?? 'User');
   return (
     <div className="flex items-start gap-2 p-3 border-2 border-black rounded bg-bg-card">
       {agent && <Avatar name={agent.name} kind="agent" size="sm" />}

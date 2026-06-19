@@ -8,6 +8,7 @@ import type { ChatMessage } from '@openspace/shared';
 import { searchMessages } from '../lib/api';
 import { useAgentsStore } from '../stores/agents';
 import { useChannelsStore } from '../stores/channels';
+import { useUsersStore } from '../stores/users';
 import { channelPath } from '../lib/routes';
 import { Dialog } from './Dialog';
 
@@ -22,6 +23,7 @@ export function SearchDialog({ open, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const agents = useAgentsStore((s) => s.agents);
   const channels = useChannelsStore((s) => s.channels);
+  const usersById = useUsersStore((s) => s.usersById);
   const navigate = useNavigate();
 
   const agentsById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents]);
@@ -91,8 +93,13 @@ export function SearchDialog({ open, onClose }: Props) {
           {results.map((m) => {
             const ch = channelsById.get(m.channel_id);
             const a = m.sender_id ? agentsById.get(m.sender_id) : undefined;
+            const u = m.sender_id ? usersById.get(m.sender_id) : undefined;
             const senderName =
-              m.sender_type === 'agent' ? `@${a?.name ?? 'Agent'}` : m.sender_type === 'system' ? 'system' : 'You';
+              m.sender_type === 'agent'
+                ? `@${a?.name ?? 'Agent'}`
+                : m.sender_type === 'system'
+                  ? 'system'
+                  : (u?.display_name ?? u?.username ?? 'User');
             return (
               <button
                 key={m.id}

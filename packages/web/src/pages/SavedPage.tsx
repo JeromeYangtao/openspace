@@ -4,6 +4,7 @@ import type { Agent, ChatMessage, Channel } from '@openspace/shared';
 import { listSaved, unsaveMessage } from '../lib/api';
 import { useAgentsStore } from '../stores/agents';
 import { useChannelsStore } from '../stores/channels';
+import { useUsersStore } from '../stores/users';
 import { channelPath } from '../lib/routes';
 import { Avatar } from '../components/Avatar';
 
@@ -12,6 +13,7 @@ export function SavedPage() {
   const [loading, setLoading] = useState(true);
   const agents = useAgentsStore((s) => s.agents);
   const channels = useChannelsStore((s) => s.channels);
+  const usersById = useUsersStore((s) => s.usersById);
   const navigate = useNavigate();
 
   const agentsById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents]);
@@ -58,6 +60,7 @@ export function SavedPage() {
               key={m.id}
               message={m}
               agent={m.sender_id ? agentsById.get(m.sender_id) : undefined}
+              user={m.sender_id ? usersById.get(m.sender_id) : undefined}
               channel={channelsById.get(m.channel_id)}
               onOpen={() => {
                 const base = channelPath(m.channel_id);
@@ -77,18 +80,22 @@ export function SavedPage() {
 function SavedRow({
   message,
   agent,
+  user,
   channel,
   onOpen,
   onUnsave,
 }: {
   message: ChatMessage;
   agent?: Agent;
+  user?: { username: string; display_name: string | null };
   channel?: Channel;
   onOpen: () => void;
   onUnsave: () => void;
 }) {
   const senderName =
-    message.sender_type === 'agent' ? `@${agent?.name ?? 'Agent'}` : 'You';
+    message.sender_type === 'agent'
+      ? `@${agent?.name ?? 'Agent'}`
+      : (user?.display_name ?? user?.username ?? 'User');
   return (
     <div className="flex items-start gap-2 p-3 border-2 border-black rounded bg-bg-card">
       {agent && <Avatar name={agent.name} kind="agent" size="sm" />}

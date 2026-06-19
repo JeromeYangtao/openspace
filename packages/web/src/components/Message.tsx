@@ -98,7 +98,7 @@ export function Message({
     message.sender_type === 'agent'
       ? (agent?.name ?? 'Agent')
       : message.sender_id && currentUser?.id === message.sender_id
-        ? 'You'
+        ? (currentUser.display_name ?? currentUser.username)
         : (user?.display_name ?? user?.username ?? 'User');
 
   const descSnippet =

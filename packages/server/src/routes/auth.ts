@@ -158,6 +158,61 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
+  app.patch('/api/auth/profile', async (req, reply) => {
+    const user = getUserFromRequest(req);
+    if (!user) {
+      reply.code(401);
+      return { error: 'unauthorized' };
+    }
+
+    const body = (req.body ?? {}) as {
+      username?: string;
+      displayName?: string | null;
+    };
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    const db = openAuthDb();
+    const row = getUserRow(db, user.id);
+    if (!row) {
+      reply.code(404);
+      return { error: 'user not found' };
+    }
+
+    if ('username' in body) {
+      const username = normalizeUsername(body.username);
+      const validation = validateUsername(username);
+      if (validation) {
+        reply.code(400);
+        return { error: validation };
+      }
+      if (username !== row.username) {
+        const existing = db
+          .prepare('SELECT id FROM users WHERE username = ? AND id != ?')
+          .get(username, user.id);
+        if (existing) {
+          reply.code(409);
+          return { error: 'username already exists' };
+        }
+        updates.push('username = ?');
+        values.push(username);
+      }
+    }
+
+    if ('displayName' in body) {
+      updates.push('display_name = ?');
+      values.push(normalizeDisplayName(body.displayName ?? undefined));
+    }
+
+    if (updates.length === 0) {
+      return userToPublic(row);
+    }
+
+    updates.push('updated_at = ?');
+    values.push(Date.now(), user.id);
+    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+    return userToPublic(getUserRow(db, user.id)!);
+  });
+
   app.get('/api/users', async () => listUsers({ includeDisabled: true }));
 
   app.get('/api/admin/users', async (req, reply) => {
@@ -310,11 +365,17 @@ function normalizeUsername(input: string | undefined): string {
 }
 
 function validateCredentials(username: string, password: string): string | null {
-  if (!/^[a-z0-9._-]{3,40}$/.test(username)) {
-    return 'username must be 3-40 characters: lowercase letters, numbers, dot, underscore, or dash';
-  }
+  const usernameError = validateUsername(username);
+  if (usernameError) return usernameError;
   if (password.length < MIN_PASSWORD_LENGTH) {
     return `password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+  }
+  return null;
+}
+
+function validateUsername(username: string): string | null {
+  if (!/^[a-z0-9._-]{3,40}$/.test(username)) {
+    return 'username must be 3-40 characters: lowercase letters, numbers, dot, underscore, or dash';
   }
   return null;
 }

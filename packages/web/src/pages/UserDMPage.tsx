@@ -88,8 +88,8 @@ export function UserDMPage() {
   }
 
   const send = (content: string, opts?: { asTask?: boolean }) => {
-    if (!channelId) return;
-    wsClient.send({
+    if (!channelId) return false;
+    return wsClient.send({
       type: 'send_message',
       channel_id: channelId,
       content,

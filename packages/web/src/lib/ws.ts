@@ -18,7 +18,6 @@ class WSClient {
   private status: 'connecting' | 'open' | 'closed' = 'closed';
   private statusListeners = new Set<(s: 'connecting' | 'open' | 'closed') => void>();
   private channelSubscriptions = new Set<string>();
-  private pendingMessages: Extract<ClientEvent, { type: 'send_message' }>[] = [];
   private reconnectEnabled = true;
 
   connect(): void {
@@ -39,7 +38,6 @@ class WSClient {
       this.reconnectAttempts = 0;
       this.setStatus('open');
       this.restoreSubscriptions();
-      this.flushPendingMessages();
     };
 
     ws.onclose = () => {
@@ -87,9 +85,8 @@ class WSClient {
     }
 
     if (event.type === 'send_message' && this.ws?.readyState !== WebSocket.OPEN) {
-      this.pendingMessages.push(event);
       this.connect();
-      return true;
+      return false;
     }
 
     if (this.ws?.readyState !== WebSocket.OPEN) return false;
@@ -109,15 +106,6 @@ class WSClient {
   private restoreSubscriptions() {
     for (const channelId of this.channelSubscriptions) {
       this.sendNow({ type: 'subscribe_channel', channel_id: channelId });
-    }
-  }
-
-  private flushPendingMessages() {
-    if (this.pendingMessages.length === 0) return;
-    const pending = this.pendingMessages;
-    this.pendingMessages = [];
-    for (const event of pending) {
-      this.sendNow(event);
     }
   }
 
@@ -158,7 +146,6 @@ class WSClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.pendingMessages = [];
     this.ws?.close();
     this.ws = null;
     this.setStatus('closed');

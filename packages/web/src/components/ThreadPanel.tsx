@@ -125,8 +125,8 @@ export function ThreadPanel({ channelId }: Props) {
   };
 
   const send = (content: string) => {
-    if (!threadId) return;
-    wsClient.send({
+    if (!threadId) return false;
+    return wsClient.send({
       type: 'send_message',
       channel_id: channelId,
       thread_id: threadId,

@@ -302,13 +302,14 @@ export function ChannelPage() {
         return next;
       });
     }
-    wsClient.send({
+    const sent = wsClient.send({
       type: 'send_message',
       channel_id: channelId,
       content,
       as_task: opts?.asTask,
     });
-    scheduleChannelRefresh(channelId, 700);
+    if (sent) scheduleChannelRefresh(channelId, 700);
+    return sent;
   };
 
   const handleStopAll = () => setStopAllOpen(true);

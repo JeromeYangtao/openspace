@@ -24,7 +24,7 @@ interface Props {
   placeholder?: string;
   defaultValue?: string;
   showAsTask?: boolean;
-  onSend: (content: string, opts?: { asTask?: boolean }) => void;
+  onSend: (content: string, opts?: { asTask?: boolean }) => void | boolean;
   disabled?: boolean;
   /** Sprint 2 CP4：可选命令列表；为空数组时不显示提示 */
   commands?: CommandHint[];
@@ -46,6 +46,7 @@ export function MessageInput({
   const [hintIndex, setHintIndex] = useState(0);
   const [cursorPos, setCursorPos] = useState(0);
   const [dismissedMentionKey, setDismissedMentionKey] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const isComposingRef = useRef(false);
   const compositionJustEndedRef = useRef(false);
@@ -136,7 +137,12 @@ export function MessageInput({
   const submit = () => {
     const text = value.trim();
     if (!text || disabled) return;
-    onSend(text, { asTask });
+    const sent = onSend(text, { asTask });
+    if (sent === false) {
+      setSendError('Connection is not ready. Try again in a moment.');
+      return;
+    }
+    setSendError(null);
     setValue(defaultValue);
     setAsTask(false);
     setCursorPos(defaultValue.length);
@@ -391,6 +397,11 @@ export function MessageInput({
             </button>
           </div>
         </div>
+        {sendError && (
+          <div className="border-t border-black/20 px-2 py-1.5 font-mono text-[11px] text-accent-red">
+            {sendError}
+          </div>
+        )}
       </div>
     </div>
   );

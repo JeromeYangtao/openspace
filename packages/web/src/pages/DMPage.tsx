@@ -104,9 +104,9 @@ export function DMPage() {
   );
 
   const send = (content: string, opts?: { asTask?: boolean }) => {
-    if (!channelId) return;
+    if (!channelId) return false;
     const c = content.includes(`@${agent.name}`) ? content : `@${agent.name} ${content}`;
-    wsClient.send({
+    return wsClient.send({
       type: 'send_message',
       channel_id: channelId,
       content: c,

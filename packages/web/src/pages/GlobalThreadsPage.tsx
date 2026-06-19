@@ -82,7 +82,7 @@ function ThreadCard({
   const senderName =
     message.sender_type === 'agent'
       ? `@${agent?.name ?? 'Agent'}`
-      : (user?.username ?? 'User');
+      : (user?.display_name ?? user?.username ?? 'User');
   return (
     <button
       onClick={onOpen}

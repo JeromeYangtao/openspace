@@ -99,7 +99,7 @@ export function SearchDialog({ open, onClose }: Props) {
                 ? `@${a?.name ?? 'Agent'}`
                 : m.sender_type === 'system'
                   ? 'system'
-                  : (u?.username ?? 'User');
+                  : (u?.display_name ?? u?.username ?? 'User');
             return (
               <button
                 key={m.id}

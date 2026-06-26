@@ -21,6 +21,9 @@ import { parseTokenCountInfo } from './codex-session-log.js';
 
 const execFileAsync = promisify(execFile);
 const COMPACT_TIMEOUT_MS = 120_000;
+const APP_SERVER_IDLE_TIMEOUT_MS = 10 * 60_000;
+const APP_SERVER_KILL_GRACE_MS = 2_000;
+const TURN_INTERRUPT_TIMEOUT_MS = 15_000;
 
 type JsonRpcId = number | string;
 type JsonRpcMessage = {
@@ -260,6 +263,719 @@ function decisionFor(
   return { decision: protocolDecision };
 }
 
+interface PendingRequest {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+}
+
+interface ActiveTurn {
+  start: number;
+  idleTimeoutMs: number;
+  events: CLIEvent[];
+  pendingApprovalIds: Set<string>;
+  options: RunnerOptions;
+  resolve: (result: RunnerResult) => void;
+  fullText: string;
+  deltaBuffer: string;
+  finalText: string;
+  timedOut: boolean;
+  aborted: boolean;
+  threadId: string | null;
+  turnId: string | null;
+  interrupting: boolean;
+  interruptTimer: NodeJS.Timeout | null;
+  settled: boolean;
+  timeoutHandle: NodeJS.Timeout | null;
+  resetIdleTimer: () => void;
+  finish: (exitCode: number | null) => RunnerResult;
+  emit: (event: CLIEvent) => void;
+}
+
+class CodexAppServerClient {
+  private child: ChildProcess | null = null;
+  private stdoutBuf = '';
+  private nextRequestId = 1;
+  private readonly pendingRequests = new Map<JsonRpcId, PendingRequest>();
+  private activeTurn: ActiveTurn | null = null;
+  private startPromise: Promise<void> | null = null;
+  private idleCloseTimer: NodeJS.Timeout | null = null;
+  private disposed = false;
+
+  constructor(
+    readonly key: string,
+    private readonly params: BuildCommandParams,
+    private readonly onDispose: (key: string) => void,
+  ) {}
+
+  get busy(): boolean {
+    return this.activeTurn !== null;
+  }
+
+  async runTurn(params: BuildCommandParams, options: RunnerOptions = {}): Promise<RunnerResult> {
+    try {
+      await this.ensureStarted();
+    } catch (e) {
+      const event: CLIEvent = {
+        type: 'error',
+        message: `Codex app-server setup failed: ${(e as Error).message}`,
+        code: 'codex_app_server_setup_failed',
+      };
+      this.dispose();
+      return {
+        exitCode: null,
+        fullText: '',
+        events: [event],
+        duration_ms: 0,
+        timedOut: false,
+        aborted: false,
+      };
+    }
+    if (this.activeTurn) {
+      return {
+        exitCode: 1,
+        fullText: '',
+        events: [{
+          type: 'error',
+          message: 'Codex app-server already has an active turn',
+          code: 'codex_app_server_busy',
+        }],
+        duration_ms: 0,
+        timedOut: false,
+        aborted: false,
+      };
+    }
+
+    const turn = this.createTurn(options);
+    this.activeTurn = turn;
+    turn.resetIdleTimer();
+
+    const onAbort = () => this.abortActiveTurn();
+
+    return new Promise<RunnerResult>((resolve) => {
+      turn.resolve = (result) => {
+        if (options.signal) options.signal.removeEventListener('abort', onAbort);
+        resolve(result);
+      };
+      if (options.signal) {
+        if (options.signal.aborted) {
+          onAbort();
+          return;
+        }
+        options.signal.addEventListener('abort', onAbort, { once: true });
+      }
+      void this.startTurn(params, turn);
+    });
+  }
+
+  private async startTurn(params: BuildCommandParams, turn: ActiveTurn): Promise<void> {
+    try {
+      const cwd = params.workingDirectory ?? process.cwd();
+      const threadResult = await this.request(
+        params.resumeSessionId ? 'thread/resume' : 'thread/start',
+        {
+          ...(params.resumeSessionId ? { threadId: params.resumeSessionId } : {}),
+          cwd,
+          runtimeWorkspaceRoots: [cwd],
+          approvalPolicy: 'on-request',
+          approvalsReviewer: 'user',
+          sandbox: sandboxMode(params),
+          ...(normalizeModel(params.model) ? { model: normalizeModel(params.model) } : {}),
+        },
+      );
+      const thread =
+        threadResult && typeof threadResult === 'object'
+          ? (threadResult as Record<string, unknown>).thread
+          : null;
+      const threadId =
+        thread && typeof thread === 'object'
+          ? (thread as Record<string, unknown>).id
+          : undefined;
+      if (typeof threadId !== 'string' || !threadId) {
+        throw new Error('Codex app-server did not return a thread id');
+      }
+      turn.threadId = threadId;
+
+      turn.emit({
+        type: 'session.started',
+        session_id: threadId,
+        meta: {
+          backend: 'app-server',
+          approvalPolicy: 'on-request',
+          sandbox: sandboxMode(params),
+        },
+      });
+
+      await this.request('turn/start', {
+        threadId,
+        input: [{ type: 'text', text: promptWithContext(params), text_elements: [] }],
+        cwd,
+        runtimeWorkspaceRoots: [cwd],
+        approvalPolicy: 'on-request',
+        approvalsReviewer: 'user',
+        sandboxPolicy: sandboxPolicy(params),
+        ...(normalizeModel(params.model) ? { model: normalizeModel(params.model) } : {}),
+        effort: normalizeReasoning(params.reasoning),
+      });
+    } catch (e) {
+      turn.emit({
+        type: 'error',
+        message: `Codex app-server setup failed: ${(e as Error).message}`,
+        code: 'codex_app_server_setup_failed',
+      });
+      this.resolveActiveTurn(turn.finish(null));
+      this.dispose();
+    }
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.clearIdleCloseTimer();
+    this.rejectPendingRequests(new Error('Codex app-server disposed'));
+    if (this.activeTurn && !this.activeTurn.settled) {
+      this.activeTurn.emit({
+        type: 'error',
+        message: 'Codex app-server was closed',
+        code: 'codex_app_server_closed',
+      });
+      this.resolveActiveTurn(this.activeTurn.finish(null));
+    }
+    try {
+      this.child?.kill('SIGTERM');
+    } catch {
+      /* ignore */
+    }
+    setTimeout(() => {
+      try {
+        this.child?.kill('SIGKILL');
+      } catch {
+        /* ignore */
+      }
+    }, APP_SERVER_KILL_GRACE_MS).unref();
+    this.onDispose(this.key);
+  }
+
+  private async ensureStarted(): Promise<void> {
+    this.clearIdleCloseTimer();
+    if (this.child && !this.disposed) return;
+    if (this.startPromise) return this.startPromise;
+    this.disposed = false;
+    this.startPromise = this.start();
+    try {
+      await this.startPromise;
+    } finally {
+      this.startPromise = null;
+    }
+  }
+
+  private async start(): Promise<void> {
+    this.child = spawn('codex', ['app-server', '--listen', 'stdio://'], {
+      cwd: this.params.workingDirectory,
+      env: this.params.envVars ? { ...process.env, ...this.params.envVars } : process.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    this.child.stdout?.on('data', (chunk: Buffer) => {
+      this.activeTurn?.resetIdleTimer();
+      this.stdoutBuf += chunk.toString('utf8');
+      let idx: number;
+      while ((idx = this.stdoutBuf.indexOf('\n')) >= 0) {
+        const line = this.stdoutBuf.slice(0, idx).trim();
+        this.stdoutBuf = this.stdoutBuf.slice(idx + 1);
+        if (!line) continue;
+        this.activeTurn?.options.onRawLine?.(line);
+        try {
+          this.handleMessage(JSON.parse(line) as JsonRpcMessage);
+        } catch (e) {
+          this.activeTurn?.emit({
+            type: 'error',
+            message: `Failed to parse Codex app-server message: ${(e as Error).message}`,
+            code: 'codex_app_server_parse_failed',
+          });
+        }
+      }
+    });
+
+    this.child.stderr?.on('data', (chunk: Buffer) => {
+      this.activeTurn?.resetIdleTimer();
+      for (const line of chunk.toString('utf8').split('\n')) {
+        if (line.trim()) this.activeTurn?.options.onStderr?.(line);
+      }
+    });
+
+    this.child.on('error', (err) => {
+      this.activeTurn?.emit({ type: 'error', message: err.message, code: 'codex_app_server_spawn_failed' });
+      if (this.activeTurn) this.resolveActiveTurn(this.activeTurn.finish(null));
+      this.dispose();
+    });
+
+    this.child.on('close', (code) => {
+      this.rejectPendingRequests(
+        new Error(`Codex app-server exited${code === null ? '' : ` (${code})`}`),
+      );
+      if (this.activeTurn && !this.activeTurn.settled) {
+        this.activeTurn.emit({
+          type: 'error',
+          message: this.activeTurn.timedOut
+            ? `Codex app-server timed out after ${this.activeTurn.idleTimeoutMs}ms without activity`
+            : `Codex app-server exited before turn completed${code === null ? '' : ` (${code})`}`,
+          code: this.activeTurn.timedOut ? 'timeout' : 'codex_app_server_exited',
+        });
+        this.resolveActiveTurn(this.activeTurn.finish(code));
+      }
+      this.child = null;
+      this.onDispose(this.key);
+    });
+
+    await this.request('initialize', {
+      clientInfo: {
+        name: 'openspace',
+        title: 'OpenSpace',
+        version: '0.0.1',
+      },
+      capabilities: {
+        experimentalApi: true,
+        requestAttestation: false,
+      },
+    });
+    this.send({ method: 'initialized', params: {} });
+  }
+
+  private createTurn(options: RunnerOptions): ActiveTurn {
+    const turn: ActiveTurn = {
+      start: Date.now(),
+      idleTimeoutMs: options.timeoutMs ?? PROCESS_IDLE_TIMEOUT_MS,
+      events: [],
+      pendingApprovalIds: new Set<string>(),
+      options,
+      resolve: () => {},
+      fullText: '',
+      deltaBuffer: '',
+      finalText: '',
+      timedOut: false,
+      aborted: false,
+      threadId: null,
+      turnId: null,
+      interrupting: false,
+      interruptTimer: null,
+      settled: false,
+      timeoutHandle: null,
+      resetIdleTimer: () => {},
+      finish: () => {
+        throw new Error('turn.finish called before initialization');
+      },
+      emit: () => {},
+    };
+
+    turn.emit = (event: CLIEvent) => {
+      turn.resetIdleTimer();
+      turn.events.push(event);
+      if (event.type === 'text.delta') {
+        turn.deltaBuffer += event.text;
+        turn.fullText = turn.deltaBuffer;
+      } else if (event.type === 'text.completed') {
+        turn.finalText = event.text;
+        turn.fullText = event.text;
+      }
+      options.onEvent?.(event);
+    };
+
+    turn.finish = (exitCode: number | null): RunnerResult => {
+      this.cleanupApprovals(turn);
+      if (!turn.finalText && turn.deltaBuffer) {
+        const event: CLIEvent = { type: 'text.completed', text: turn.deltaBuffer };
+        turn.events.push(event);
+        turn.fullText = turn.deltaBuffer;
+        options.onEvent?.(event);
+      }
+      return {
+        exitCode,
+        fullText: turn.fullText,
+        events: turn.events,
+        duration_ms: Date.now() - turn.start,
+        timedOut: turn.timedOut,
+        aborted: turn.aborted,
+      };
+    };
+
+    turn.resetIdleTimer = () => {
+      if (turn.timeoutHandle) clearTimeout(turn.timeoutHandle);
+      turn.timeoutHandle = setTimeout(() => {
+        if (turn.pendingApprovalIds.size > 0) {
+          turn.resetIdleTimer();
+          return;
+        }
+        turn.timedOut = true;
+        this.abortActiveTurn(false);
+      }, turn.idleTimeoutMs);
+      turn.timeoutHandle.unref();
+    };
+
+    return turn;
+  }
+
+  private abortActiveTurn(markAborted = true): void {
+    const turn = this.activeTurn;
+    if (!turn) return;
+    if (markAborted) turn.aborted = true;
+    if (turn.interrupting) return;
+    turn.interrupting = true;
+
+    if (!turn.threadId || !turn.turnId) {
+      turn.emit({
+        type: 'error',
+        message: 'Codex turn interrupt unavailable before turn start completed',
+        code: 'codex_turn_interrupt_unavailable',
+      });
+      this.dispose();
+      return;
+    }
+
+    turn.interruptTimer = setTimeout(() => {
+      if (this.activeTurn !== turn || turn.settled) return;
+      turn.emit({
+        type: 'error',
+        message: `Codex turn interrupt timed out after ${TURN_INTERRUPT_TIMEOUT_MS}ms`,
+        code: 'codex_turn_interrupt_timeout',
+      });
+      this.dispose();
+    }, TURN_INTERRUPT_TIMEOUT_MS);
+    turn.interruptTimer.unref();
+
+    void this.request('turn/interrupt', {
+      threadId: turn.threadId,
+      turnId: turn.turnId,
+    }).catch((e) => {
+      if (this.activeTurn !== turn || turn.settled) return;
+      turn.emit({
+        type: 'error',
+        message: `Codex turn interrupt failed: ${(e as Error).message}`,
+        code: 'codex_turn_interrupt_failed',
+      });
+      this.dispose();
+    });
+  }
+
+  private resolveActiveTurn(result: RunnerResult): void {
+    const turn = this.activeTurn;
+    if (!turn || turn.settled) return;
+    turn.settled = true;
+    if (turn.timeoutHandle) clearTimeout(turn.timeoutHandle);
+    if (turn.interruptTimer) clearTimeout(turn.interruptTimer);
+    this.cleanupApprovals(turn);
+    this.activeTurn = null;
+    turn.resolve(result);
+    if (!this.disposed && this.child) {
+      this.scheduleIdleClose();
+    }
+  }
+
+  private cleanupApprovals(turn: ActiveTurn): void {
+    for (const id of turn.pendingApprovalIds) {
+      cancelApproval(id);
+    }
+    turn.pendingApprovalIds.clear();
+  }
+
+  private rejectPendingRequests(error: Error): void {
+    for (const pending of this.pendingRequests.values()) {
+      pending.reject(error);
+    }
+    this.pendingRequests.clear();
+  }
+
+  private send(message: JsonRpcMessage): void {
+    if (!this.child?.stdin || this.child.stdin.destroyed) return;
+    this.child.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
+  private request(method: string, requestParams: Record<string, unknown> | undefined): Promise<unknown> {
+    const id = this.nextRequestId++;
+    return new Promise<unknown>((resolve, reject) => {
+      this.pendingRequests.set(id, { resolve, reject });
+      this.send({ id, method, params: requestParams });
+    });
+  }
+
+  private handleMessage(message: JsonRpcMessage): void {
+    this.activeTurn?.resetIdleTimer();
+    if (message.id !== undefined && (message.result !== undefined || message.error)) {
+      const pending = this.pendingRequests.get(message.id);
+      if (!pending) return;
+      this.pendingRequests.delete(message.id);
+      if (message.error) {
+        pending.reject(new Error(message.error.message ?? 'Codex app-server request failed'));
+      } else {
+        pending.resolve(message.result);
+      }
+      return;
+    }
+
+    if (message.id !== undefined && message.method) {
+      this.handleServerRequest(message.id, message.method, message.params ?? {});
+      return;
+    }
+
+    if (!message.method) return;
+    this.handleNotification(message.method, message.params ?? {});
+  }
+
+  private handleServerRequest(
+    requestId: JsonRpcId,
+    method: string,
+    requestParams: Record<string, unknown>,
+  ): void {
+    const turn = this.activeTurn;
+    if (!turn) {
+      this.send({
+        id: requestId,
+        error: { code: -32000, message: 'No active OpenSpace turn for approval request' },
+      });
+      return;
+    }
+    if (
+      method !== 'item/commandExecution/requestApproval' &&
+      method !== 'item/fileChange/requestApproval' &&
+      method !== 'item/permissions/requestApproval'
+    ) {
+      this.send({
+        id: requestId,
+        error: { code: -32601, message: `Unsupported Codex server request: ${method}` },
+      });
+      return;
+    }
+
+    const kind = approvalKind(method);
+    const title = approvalTitle(method);
+    const command = commandFromParams(requestParams);
+    const detail = approvalDetail(kind, requestParams);
+    const policyAmendment = policyAmendmentFromParams(requestParams);
+    const reason =
+      typeof requestParams.reason === 'string'
+        ? requestParams.reason
+        : typeof requestParams.grantRoot === 'string'
+          ? `Grant write access to ${requestParams.grantRoot}`
+          : undefined;
+
+    const approval = registerApproval({
+      kind,
+      title,
+      command,
+      reason,
+      policyAmendment,
+      decide: (decision) => {
+        turn.resetIdleTimer();
+        turn.pendingApprovalIds.delete(approval.id);
+        const result = decisionFor(kind, decision, requestParams);
+        if (!result) {
+          this.send({
+            id: requestId,
+            error: { code: -32000, message: 'Approval request declined by user' },
+          });
+          return;
+        }
+        this.send({ id: requestId, result });
+      },
+      cancel: () => {
+        this.send({ id: requestId, error: { code: -32000, message: 'Approval request canceled' } });
+      },
+    });
+    turn.pendingApprovalIds.add(approval.id);
+    turn.emit({
+      type: 'approval.required',
+      call_id: approval.id,
+      title,
+      kind,
+      command,
+      detail,
+      reason,
+      policyAmendment,
+      supported: true,
+    });
+  }
+
+  private handleNotification(method: string, notificationParams: Record<string, unknown>): void {
+    const turn = this.activeTurn;
+    if (!turn) return;
+    switch (method) {
+      case 'turn/started': {
+        const startedTurn = notificationParams.turn;
+        const threadId = notificationParams.threadId;
+        if (typeof threadId === 'string' && threadId) {
+          turn.threadId = threadId;
+        }
+        if (startedTurn && typeof startedTurn === 'object') {
+          const turnId = (startedTurn as Record<string, unknown>).id;
+          if (typeof turnId === 'string' && turnId) {
+            turn.turnId = turnId;
+          }
+        }
+        break;
+      }
+
+      case 'item/agentMessage/delta': {
+        const delta = notificationParams.delta;
+        if (typeof delta === 'string' && delta) turn.emit({ type: 'text.delta', text: delta });
+        break;
+      }
+
+      case 'item/reasoning/textDelta':
+      case 'item/reasoning/summaryTextDelta': {
+        const delta = notificationParams.delta;
+        if (typeof delta === 'string' && delta) turn.emit({ type: 'thinking.delta', text: delta });
+        break;
+      }
+
+      case 'item/started': {
+        const item = notificationParams.item;
+        if (!item || typeof item !== 'object') break;
+        const record = item as Record<string, unknown>;
+        if (record.type !== 'commandExecution') break;
+        const id = typeof record.id === 'string' ? record.id : `command-${Date.now()}`;
+        const command = typeof record.command === 'string' ? record.command : '';
+        turn.emit({
+          type: 'tool.started',
+          call_id: id,
+          tool: 'shell',
+          args: {
+            command,
+            cwd: typeof record.cwd === 'string' ? record.cwd : undefined,
+          },
+        });
+        break;
+      }
+
+      case 'item/completed': {
+        const item = notificationParams.item;
+        if (!item || typeof item !== 'object') break;
+        const record = item as Record<string, unknown>;
+        if (record.type === 'agentMessage') {
+          const text = typeof record.text === 'string' ? record.text : '';
+          if (text && text !== turn.finalText) turn.emit({ type: 'text.completed', text });
+        } else if (record.type === 'commandExecution') {
+          const id = typeof record.id === 'string' ? record.id : `command-${Date.now()}`;
+          const exitCode = typeof record.exitCode === 'number' ? record.exitCode : undefined;
+          const output =
+            typeof record.aggregatedOutput === 'string' ? record.aggregatedOutput : undefined;
+          turn.emit({
+            type: 'tool.completed',
+            call_id: id,
+            tool: 'shell',
+            success: exitCode === undefined || exitCode === 0,
+            result: output,
+            exit_code: exitCode,
+            duration_ms:
+              typeof record.durationMs === 'number' ? record.durationMs : undefined,
+          });
+        } else if (record.type === 'reasoning') {
+          turn.emit({ type: 'thinking.completed' });
+        }
+        break;
+      }
+
+      case 'thread/tokenUsage/updated': {
+        const usage = parseContextUsage(notificationParams.tokenUsage);
+        if (usage) turn.emit({ type: 'context_usage.updated', usage });
+        break;
+      }
+
+      case 'token_count': {
+        const usage = parseTokenCountInfo(notificationParams.info);
+        if (usage) turn.emit({ type: 'context_usage.updated', usage });
+        break;
+      }
+
+      case 'turn/completed': {
+        const completedTurn = notificationParams.turn;
+        const status =
+          completedTurn && typeof completedTurn === 'object'
+            ? (completedTurn as Record<string, unknown>).status
+            : undefined;
+        if (status === 'interrupted' && !turn.timedOut) {
+          turn.aborted = true;
+        }
+        turn.emit({
+          type: 'session.completed',
+          duration_ms:
+            completedTurn &&
+            typeof completedTurn === 'object' &&
+            typeof (completedTurn as Record<string, unknown>).durationMs === 'number'
+              ? ((completedTurn as Record<string, unknown>).durationMs as number)
+              : undefined,
+        });
+        this.resolveActiveTurn(turn.finish(status === 'completed' ? 0 : 1));
+        break;
+      }
+
+      case 'error': {
+        turn.emit({
+          type: 'error',
+          message: errorMessageFromNotification(notificationParams),
+          code: 'codex_app_server_error',
+        });
+        break;
+      }
+
+      default:
+        break;
+    }
+  }
+
+  private scheduleIdleClose(): void {
+    this.clearIdleCloseTimer();
+    this.idleCloseTimer = setTimeout(() => {
+      if (!this.activeTurn) this.dispose();
+    }, APP_SERVER_IDLE_TIMEOUT_MS);
+    this.idleCloseTimer.unref();
+  }
+
+  private clearIdleCloseTimer(): void {
+    if (!this.idleCloseTimer) return;
+    clearTimeout(this.idleCloseTimer);
+    this.idleCloseTimer = null;
+  }
+}
+
+const appServerClients = new Map<string, CodexAppServerClient>();
+
+function appServerKey(params: BuildCommandParams): string {
+  return params.codexAppServerKey ?? params.workingDirectory ?? 'default';
+}
+
+function getAppServerClient(params: BuildCommandParams): CodexAppServerClient {
+  const key = appServerKey(params);
+  const existing = appServerClients.get(key);
+  if (existing) return existing;
+  const client = new CodexAppServerClient(key, params, (disposedKey) => {
+    if (appServerClients.get(disposedKey) === client) {
+      appServerClients.delete(disposedKey);
+    }
+  });
+  appServerClients.set(key, client);
+  return client;
+}
+
+export function disposeCodexAppServers(): void {
+  for (const client of [...appServerClients.values()]) {
+    client.dispose();
+  }
+  appServerClients.clear();
+}
+
+export function snapshotCodexAppServers(): {
+  active_clients: number;
+  busy_clients: number;
+} {
+  let busy = 0;
+  for (const client of appServerClients.values()) {
+    if (client.busy) busy += 1;
+  }
+  return {
+    active_clients: appServerClients.size,
+    busy_clients: busy,
+  };
+}
+
 export class CodexAppServerAdapter implements CLIAdapter {
   readonly name = 'codex';
 
@@ -339,447 +1055,7 @@ export class CodexAppServerAdapter implements CLIAdapter {
   }
 
   async runDirect(params: BuildCommandParams, options: RunnerOptions = {}): Promise<RunnerResult> {
-    const start = Date.now();
-    const idleTimeoutMs = options.timeoutMs ?? PROCESS_IDLE_TIMEOUT_MS;
-    const events: CLIEvent[] = [];
-    const pendingApprovalIds = new Set<string>();
-    const pendingRequests = new Map<JsonRpcId, {
-      resolve: (value: unknown) => void;
-      reject: (error: Error) => void;
-    }>();
-    let nextRequestId = 1;
-    let stdoutBuf = '';
-    let fullText = '';
-    let deltaBuffer = '';
-    let finalText = '';
-    let timedOut = false;
-    let aborted = false;
-    let settled = false;
-    let timeoutHandle: NodeJS.Timeout | null = null;
-    let child: ChildProcess | null = null;
-    let resetIdleTimer = () => {};
-
-    const emit = (event: CLIEvent) => {
-      resetIdleTimer();
-      events.push(event);
-      if (event.type === 'text.delta') {
-        deltaBuffer += event.text;
-        fullText = deltaBuffer;
-      } else if (event.type === 'text.completed') {
-        finalText = event.text;
-        fullText = event.text;
-      }
-      options.onEvent?.(event);
-    };
-
-    const send = (message: JsonRpcMessage) => {
-      if (!child?.stdin || child.stdin.destroyed) return;
-      child.stdin.write(`${JSON.stringify(message)}\n`);
-    };
-
-    const request = (method: string, requestParams: Record<string, unknown> | undefined) => {
-      const id = nextRequestId++;
-      return new Promise<unknown>((resolve, reject) => {
-        pendingRequests.set(id, { resolve, reject });
-        send({ id, method, params: requestParams });
-      });
-    };
-
-    const cleanupApprovals = () => {
-      for (const id of pendingApprovalIds) {
-        cancelApproval(id);
-      }
-      pendingApprovalIds.clear();
-    };
-
-    const finish = (exitCode: number | null): RunnerResult => {
-      cleanupApprovals();
-      if (!finalText && deltaBuffer) {
-        const event: CLIEvent = { type: 'text.completed', text: deltaBuffer };
-        events.push(event);
-        fullText = deltaBuffer;
-        options.onEvent?.(event);
-      }
-      return {
-        exitCode,
-        fullText,
-        events,
-        duration_ms: Date.now() - start,
-        timedOut,
-        aborted,
-      };
-    };
-
-    return new Promise<RunnerResult>((resolve) => {
-      const abort = (markAborted = true) => {
-        if (markAborted) aborted = true;
-        try {
-          child?.kill('SIGTERM');
-        } catch {
-          /* ignore */
-        }
-        setTimeout(() => {
-          try {
-            child?.kill('SIGKILL');
-          } catch {
-            /* ignore */
-          }
-        }, 2000);
-      };
-
-      resetIdleTimer = () => {
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        timeoutHandle = setTimeout(() => {
-          if (pendingApprovalIds.size > 0) {
-            resetIdleTimer();
-            return;
-          }
-          timedOut = true;
-          abort(false);
-        }, idleTimeoutMs);
-      };
-
-      const resolveOnce = (result: RunnerResult) => {
-        if (settled) return;
-        settled = true;
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        cleanupApprovals();
-        try {
-          child?.kill('SIGTERM');
-        } catch {
-          /* ignore */
-        }
-        resolve(result);
-      };
-
-      const handleMessage = (message: JsonRpcMessage) => {
-        resetIdleTimer();
-        if (message.id !== undefined && (message.result !== undefined || message.error)) {
-          const pending = pendingRequests.get(message.id);
-          if (!pending) return;
-          pendingRequests.delete(message.id);
-          if (message.error) {
-            pending.reject(new Error(message.error.message ?? 'Codex app-server request failed'));
-          } else {
-            pending.resolve(message.result);
-          }
-          return;
-        }
-
-        if (message.id !== undefined && message.method) {
-          handleServerRequest(message.id, message.method, message.params ?? {});
-          return;
-        }
-
-        if (!message.method) return;
-        handleNotification(message.method, message.params ?? {});
-      };
-
-      const handleServerRequest = (
-        requestId: JsonRpcId,
-        method: string,
-        requestParams: Record<string, unknown>,
-      ) => {
-        if (
-          method !== 'item/commandExecution/requestApproval' &&
-          method !== 'item/fileChange/requestApproval' &&
-          method !== 'item/permissions/requestApproval'
-        ) {
-          send({
-            id: requestId,
-            error: { code: -32601, message: `Unsupported Codex server request: ${method}` },
-          });
-          return;
-        }
-
-        const kind = approvalKind(method);
-        const title = approvalTitle(method);
-        const command = commandFromParams(requestParams);
-        const detail = approvalDetail(kind, requestParams);
-        const policyAmendment = policyAmendmentFromParams(requestParams);
-        const reason =
-          typeof requestParams.reason === 'string'
-            ? requestParams.reason
-            : typeof requestParams.grantRoot === 'string'
-              ? `Grant write access to ${requestParams.grantRoot}`
-              : undefined;
-
-        const approval = registerApproval({
-          kind,
-          title,
-          command,
-          reason,
-          policyAmendment,
-          decide: (decision) => {
-            resetIdleTimer();
-            pendingApprovalIds.delete(approval.id);
-            const result = decisionFor(kind, decision, requestParams);
-            if (!result) {
-              send({
-                id: requestId,
-                error: { code: -32000, message: 'Approval request declined by user' },
-              });
-              return;
-            }
-            send({ id: requestId, result });
-          },
-          cancel: () => {
-            send({ id: requestId, error: { code: -32000, message: 'Approval request canceled' } });
-          },
-        });
-        pendingApprovalIds.add(approval.id);
-        emit({
-          type: 'approval.required',
-          call_id: approval.id,
-          title,
-          kind,
-          command,
-          detail,
-          reason,
-          policyAmendment,
-          supported: true,
-        });
-      };
-
-      const handleNotification = (method: string, notificationParams: Record<string, unknown>) => {
-        switch (method) {
-          case 'item/agentMessage/delta': {
-            const delta = notificationParams.delta;
-            if (typeof delta === 'string' && delta) emit({ type: 'text.delta', text: delta });
-            break;
-          }
-
-          case 'item/reasoning/textDelta':
-          case 'item/reasoning/summaryTextDelta': {
-            const delta = notificationParams.delta;
-            if (typeof delta === 'string' && delta) emit({ type: 'thinking.delta', text: delta });
-            break;
-          }
-
-          case 'item/started': {
-            const item = notificationParams.item;
-            if (!item || typeof item !== 'object') break;
-            const record = item as Record<string, unknown>;
-            if (record.type !== 'commandExecution') break;
-            const id = typeof record.id === 'string' ? record.id : `command-${Date.now()}`;
-            const command = typeof record.command === 'string' ? record.command : '';
-            emit({
-              type: 'tool.started',
-              call_id: id,
-              tool: 'shell',
-              args: {
-                command,
-                cwd: typeof record.cwd === 'string' ? record.cwd : undefined,
-              },
-            });
-            break;
-          }
-
-          case 'item/completed': {
-            const item = notificationParams.item;
-            if (!item || typeof item !== 'object') break;
-            const record = item as Record<string, unknown>;
-            if (record.type === 'agentMessage') {
-              const text = typeof record.text === 'string' ? record.text : '';
-              if (text && text !== finalText) emit({ type: 'text.completed', text });
-            } else if (record.type === 'commandExecution') {
-              const id = typeof record.id === 'string' ? record.id : `command-${Date.now()}`;
-              const exitCode = typeof record.exitCode === 'number' ? record.exitCode : undefined;
-              const output =
-                typeof record.aggregatedOutput === 'string' ? record.aggregatedOutput : undefined;
-              emit({
-                type: 'tool.completed',
-                call_id: id,
-                tool: 'shell',
-                success: exitCode === undefined || exitCode === 0,
-                result: output,
-                exit_code: exitCode,
-                duration_ms:
-                  typeof record.durationMs === 'number' ? record.durationMs : undefined,
-              });
-            } else if (record.type === 'reasoning') {
-              emit({ type: 'thinking.completed' });
-            }
-            break;
-          }
-
-          case 'thread/tokenUsage/updated': {
-            const usage = parseContextUsage(notificationParams.tokenUsage);
-            if (usage) emit({ type: 'context_usage.updated', usage });
-            break;
-          }
-
-          case 'token_count': {
-            const usage = parseTokenCountInfo(notificationParams.info);
-            if (usage) emit({ type: 'context_usage.updated', usage });
-            break;
-          }
-
-          case 'turn/completed': {
-            const turn = notificationParams.turn;
-            const status =
-              turn && typeof turn === 'object'
-                ? (turn as Record<string, unknown>).status
-                : undefined;
-            emit({
-              type: 'session.completed',
-              duration_ms:
-                turn && typeof turn === 'object' && typeof (turn as Record<string, unknown>).durationMs === 'number'
-                  ? ((turn as Record<string, unknown>).durationMs as number)
-                  : undefined,
-            });
-            resolveOnce(finish(status === 'completed' ? 0 : 1));
-            break;
-          }
-
-          case 'error': {
-            emit({
-              type: 'error',
-              message: errorMessageFromNotification(notificationParams),
-              code: 'codex_app_server_error',
-            });
-            break;
-          }
-
-          default:
-            break;
-        }
-      };
-
-      child = spawn('codex', ['app-server', '--listen', 'stdio://'], {
-        cwd: params.workingDirectory,
-        env: params.envVars ? { ...process.env, ...params.envVars } : process.env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-
-      child.stdout?.on('data', (chunk: Buffer) => {
-        resetIdleTimer();
-        stdoutBuf += chunk.toString('utf8');
-        let idx: number;
-        while ((idx = stdoutBuf.indexOf('\n')) >= 0) {
-          const line = stdoutBuf.slice(0, idx).trim();
-          stdoutBuf = stdoutBuf.slice(idx + 1);
-          if (!line) continue;
-          options.onRawLine?.(line);
-          try {
-            handleMessage(JSON.parse(line) as JsonRpcMessage);
-          } catch (e) {
-            emit({
-              type: 'error',
-              message: `Failed to parse Codex app-server message: ${(e as Error).message}`,
-              code: 'codex_app_server_parse_failed',
-            });
-          }
-        }
-      });
-
-      child.stderr?.on('data', (chunk: Buffer) => {
-        resetIdleTimer();
-        for (const line of chunk.toString('utf8').split('\n')) {
-          if (line.trim()) options.onStderr?.(line);
-        }
-      });
-
-      child.on('error', (err) => {
-        emit({ type: 'error', message: err.message, code: 'codex_app_server_spawn_failed' });
-        resolveOnce(finish(null));
-      });
-
-      child.on('close', (code) => {
-        if (!settled) {
-          emit({
-            type: 'error',
-            message: timedOut
-              ? `Codex app-server timed out after ${idleTimeoutMs}ms without activity`
-              : `Codex app-server exited before turn completed${code === null ? '' : ` (${code})`}`,
-            code: timedOut ? 'timeout' : 'codex_app_server_exited',
-          });
-          resolveOnce(finish(code));
-        }
-      });
-
-      resetIdleTimer();
-
-      if (options.signal) {
-        if (options.signal.aborted) abort();
-        else options.signal.addEventListener('abort', () => abort(), { once: true });
-      }
-
-      void (async () => {
-        try {
-          await request('initialize', {
-            clientInfo: {
-              name: 'openspace',
-              title: 'OpenSpace',
-              version: '0.0.1',
-            },
-            capabilities: {
-              experimentalApi: true,
-              requestAttestation: false,
-            },
-          });
-
-          const cwd = params.workingDirectory ?? process.cwd();
-          const threadResult = await request(
-            params.resumeSessionId ? 'thread/resume' : 'thread/start',
-            {
-              ...(params.resumeSessionId ? { threadId: params.resumeSessionId } : {}),
-              cwd,
-              runtimeWorkspaceRoots: [cwd],
-              approvalPolicy: 'on-request',
-              approvalsReviewer: 'user',
-              sandbox: sandboxMode(params),
-              ...(normalizeModel(params.model) ? { model: normalizeModel(params.model) } : {}),
-            },
-          );
-          const thread =
-            threadResult && typeof threadResult === 'object'
-              ? (threadResult as Record<string, unknown>).thread
-              : null;
-          const threadId =
-            thread && typeof thread === 'object'
-              ? (thread as Record<string, unknown>).id
-              : undefined;
-          if (typeof threadId !== 'string' || !threadId) {
-            throw new Error('Codex app-server did not return a thread id');
-          }
-
-          emit({
-            type: 'session.started',
-            session_id: threadId,
-            meta: {
-              backend: 'app-server',
-              approvalPolicy: 'on-request',
-              sandbox: sandboxMode(params),
-            },
-          });
-
-          await request('turn/start', {
-            threadId,
-            input: [{ type: 'text', text: promptWithContext(params), text_elements: [] }],
-            cwd,
-            runtimeWorkspaceRoots: [cwd],
-            approvalPolicy: 'on-request',
-            approvalsReviewer: 'user',
-            sandboxPolicy: sandboxPolicy(params),
-            ...(normalizeModel(params.model) ? { model: normalizeModel(params.model) } : {}),
-            effort: normalizeReasoning(params.reasoning),
-          });
-        } catch (e) {
-          emit({
-            type: 'error',
-            message: `Codex app-server setup failed: ${(e as Error).message}`,
-            code: 'codex_app_server_setup_failed',
-          });
-          try {
-            child?.kill('SIGTERM');
-          } catch {
-            /* ignore */
-          }
-          resolveOnce(finish(null));
-        }
-      })();
-    });
+    return getAppServerClient(params).runTurn(params, options);
   }
 }
 

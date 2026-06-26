@@ -222,6 +222,7 @@ export async function triggerAgent(
                 channel_id: ctx.channelId,
               })
             : null,
+        codexAppServerKey: agent.runtime === 'codex' ? `${cwd}:${agent.id}` : undefined,
       },
       {
         signal,

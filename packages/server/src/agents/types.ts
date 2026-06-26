@@ -129,6 +129,11 @@ export interface BuildCommandParams {
   stdinContext?: string;
   permissive?: boolean;
   resumeSessionId?: string | null;
+  /**
+   * Optional stable key for long-lived Codex app-server reuse.
+   * Other adapters ignore this field.
+   */
+  codexAppServerKey?: string;
 }
 
 export interface SpawnSpec {

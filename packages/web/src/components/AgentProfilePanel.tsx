@@ -10,7 +10,16 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { Agent, AgentActivity, AgentFeedback, AgentStatus, ContextSize, ReasoningEffort } from '@openspace/shared';
+import type {
+  Agent,
+  AgentActivity,
+  AgentFeedback,
+  AgentStatus,
+  CodexRuntimeState,
+  CodexRuntimeStatus,
+  ContextSize,
+  ReasoningEffort,
+} from '@openspace/shared';
 import { cn } from '../lib/cn';
 import {
   applyAgentFeedback,
@@ -86,7 +95,14 @@ export function AgentProfilePanel({ agent }: Props) {
           </div>
         </div>
         <IconButton onClick={actionHandlers.message} title="Message">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
         </IconButton>
@@ -96,13 +112,27 @@ export function AgentProfilePanel({ agent }: Props) {
           </svg>
         </IconButton>
         <IconButton onClick={() => void actionHandlers.restart()} title="Restart / Reset">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M23 4v6h-6M1 20v-6h6" />
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
           </svg>
         </IconButton>
         <IconButton onClick={close} title="Close">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
@@ -123,7 +153,16 @@ export function AgentProfilePanel({ agent }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {tab === 'profile' && <ProfileTab agent={agent} channelId={channelId} onDelete={actionHandlers.delete} onStart={actionHandlers.start} onStop={actionHandlers.stop} onRestart={actionHandlers.restart} />}
+        {tab === 'profile' && (
+          <ProfileTab
+            agent={agent}
+            channelId={channelId}
+            onDelete={actionHandlers.delete}
+            onStart={actionHandlers.start}
+            onStop={actionHandlers.stop}
+            onRestart={actionHandlers.restart}
+          />
+        )}
         {tab === 'activity' && <ActivityTab agent={agent} />}
         {tab === 'feedback' && <FeedbackTab agent={agent} />}
       </div>
@@ -133,7 +172,14 @@ export function AgentProfilePanel({ agent }: Props) {
 
 function FeedbackIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
     </svg>
   );
@@ -399,9 +445,11 @@ function ProfileTab({
 }) {
   const upsertAgent = useAgentsStore((s) => s.upsert);
   const setContextUsage = useAgentsStore((s) => s.setContextUsage);
+  const refreshCodexRuntimeStatuses = useAgentsStore((s) => s.refreshCodexRuntimeStatuses);
   // CP8.2：派生 status（任意 channel 活跃 → 该 run 状态；否则用 agent.status）
   const derivedStatus = useAgentsStore((s) => s.getDerivedStatus(agent.id));
   const contextUsage = useAgentsStore((s) => s.getLatestContextUsage(agent.id));
+  const codexRuntimeStatus = useAgentsStore((s) => s.getCodexRuntimeStatus(agent.id, channelId));
 
   useEffect(() => {
     if (!channelId || agent.runtime !== 'codex') return;
@@ -411,6 +459,13 @@ function ProfileTab({
         // Missing session logs should not hide token usage already received over WS.
       });
   }, [agent.id, agent.runtime, channelId, setContextUsage]);
+
+  useEffect(() => {
+    if (agent.runtime !== 'codex') return;
+    void refreshCodexRuntimeStatuses().catch(() => {
+      // The periodic websocket update will retry runtime visibility.
+    });
+  }, [agent.runtime, refreshCodexRuntimeStatuses]);
 
   const saveName = async (v: string) => {
     if (!v) return;
@@ -462,8 +517,7 @@ function ProfileTab({
     });
     upsertAgent(updated);
   };
-  const isMaxMode =
-    agent.reasoning === 'max' && agent.thinking === true && agent.context === '1m';
+  const isMaxMode = agent.reasoning === 'max' && agent.thinking === true && agent.context === '1m';
 
   return (
     <div className="p-4 space-y-5">
@@ -478,6 +532,10 @@ function ProfileTab({
           <div className="text-sm font-mono text-text-secondary mt-0.5">@{agent.name}</div>
         </div>
       </div>
+
+      {agent.runtime === 'codex' && (
+        <CodexRuntimeStatusPanel status={codexRuntimeStatus} channelScoped={!!channelId} />
+      )}
 
       {contextUsage && <ContextUsageMeter agent={agent} usage={contextUsage} />}
 
@@ -507,18 +565,18 @@ function ProfileTab({
                 ? 'bg-accent-pink font-bold shadow-[2px_2px_0_0_#000]'
                 : 'bg-bg-card hover:bg-accent-yellow',
             )}
-            title={isMaxMode ? '关闭 MAX Mode（回到默认 medium / off / default）' : '一键开启 MAX：effort=max + thinking=on + context=1m'}
+            title={
+              isMaxMode
+                ? '关闭 MAX Mode（回到默认 medium / off / default）'
+                : '一键开启 MAX：effort=max + thinking=on + context=1m'
+            }
           >
             {isMaxMode ? '✓ MAX Mode' : '🚀 MAX Mode'}
           </button>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <InfoTag label="Runtime" value={agent.runtime} color="teal" />
-          <ModelEditTag
-            agentRuntime={agent.runtime}
-            value={agent.model ?? ''}
-            onSave={saveModel}
-          />
+          <ModelEditTag agentRuntime={agent.runtime} value={agent.model ?? ''} onSave={saveModel} />
           <ReasoningEditTag value={agent.reasoning ?? 'medium'} onSave={saveReasoning} />
           <ThinkingEditTag value={agent.thinking ?? null} onSave={saveThinking} />
           <ContextEditTag value={agent.context ?? null} onSave={saveContext} />
@@ -566,29 +624,54 @@ function ProfileTab({
         <div className="section-header mb-3">ACTIONS</div>
         <div className="space-y-2">
           <ActionButton onClick={() => void onStart()}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
             Start Agent
           </ActionButton>
           <ActionButton onClick={() => void onStop()}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" /></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" />
+            </svg>
             Stop Agent
           </ActionButton>
           <ActionButton onClick={() => void onRestart()}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M23 4v6h-6M1 20v-6h6" />
               <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
             </svg>
             Restart / Reset
           </ActionButton>
           <ActionButton onClick={() => {}} variant="pink" disabled title="Coming soon">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M12 9v4M12 17h.01" />
               <circle cx="12" cy="12" r="10" />
             </svg>
             Report Issue
           </ActionButton>
           <ActionButton onClick={() => void onDelete()} variant="red">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polyline points="3 6 5 6 21 6" />
               <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
             </svg>
@@ -600,13 +683,92 @@ function ProfileTab({
   );
 }
 
-function ContextUsageMeter({
-  agent,
-  usage,
+function CodexRuntimeStatusPanel({
+  status,
+  channelScoped,
 }: {
-  agent: Agent;
-  usage: AgentContextUsageSnapshot;
+  status: CodexRuntimeStatus | undefined;
+  channelScoped: boolean;
 }) {
+  const state = status?.state ?? 'exited';
+  const label = codexRuntimeStateLabel(state);
+  const lastSeen = status?.last_message_at
+    ? new Date(status.last_message_at).toLocaleTimeString()
+    : 'not seen';
+  const activeTurn = status?.active_turn;
+
+  return (
+    <div className="border-2 border-black rounded bg-bg-card p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="section-header">CODEX APP-SERVER</div>
+        <span
+          className={cn(
+            'text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 border-2 border-black rounded',
+            codexRuntimeStateClass(state),
+          )}
+        >
+          {label}
+        </span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <TokenStat label="PID" value={status?.pid ? String(status.pid) : 'none'} />
+        <TokenStat label="Last signal" value={lastSeen} />
+      </div>
+      {activeTurn && (
+        <div className="mt-2 text-[10px] font-mono leading-snug text-text-secondary">
+          Active turn started {new Date(activeTurn.started_at).toLocaleTimeString()}
+          {activeTurn.interrupting ? ' · interrupting' : ''}
+        </div>
+      )}
+      {!status && (
+        <div className="mt-2 text-[10px] font-mono leading-snug text-text-secondary">
+          No Codex app-server is currently registered
+          {channelScoped ? ' for this channel.' : '.'}
+        </div>
+      )}
+      {status?.error && (
+        <div className="mt-2 text-[10px] font-mono leading-snug text-red-700 truncate">
+          {status.error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function codexRuntimeStateLabel(state: CodexRuntimeState): string {
+  switch (state) {
+    case 'starting':
+      return 'starting';
+    case 'healthy':
+      return 'ready';
+    case 'busy':
+      return 'running';
+    case 'stale':
+      return 'stale';
+    case 'error':
+      return 'error';
+    case 'exited':
+      return 'offline';
+  }
+}
+
+function codexRuntimeStateClass(state: CodexRuntimeState): string {
+  switch (state) {
+    case 'healthy':
+      return 'bg-[#b8e98c]';
+    case 'busy':
+    case 'starting':
+      return 'bg-accent-yellow';
+    case 'stale':
+      return 'bg-accent-orange/60';
+    case 'error':
+      return 'bg-red-300';
+    case 'exited':
+      return 'bg-bg-main text-text-secondary';
+  }
+}
+
+function ContextUsageMeter({ agent, usage }: { agent: Agent; usage: AgentContextUsageSnapshot }) {
   const [compacting, setCompacting] = useState(false);
   const [compactMessage, setCompactMessage] = useState<string | null>(null);
   const total = formatTokenCount(usage.total.total_tokens);
@@ -642,7 +804,9 @@ function ContextUsageMeter({
           updated {new Date(usage.updatedAt).toLocaleTimeString()}
         </div>
       </div>
-      <div className={cn('mt-2 grid gap-2', contextPercent === null ? 'grid-cols-3' : 'grid-cols-4')}>
+      <div
+        className={cn('mt-2 grid gap-2', contextPercent === null ? 'grid-cols-3' : 'grid-cols-4')}
+      >
         {contextPercent !== null && (
           <TokenStat label="Context used" value={formatContextPercent(contextPercent)} />
         )}
@@ -792,13 +956,19 @@ function ActivityTab({ agent }: { agent: Agent }) {
             <span className="text-[10px] font-mono text-text-secondary mt-0.5">
               {new Date(a.created_at).toLocaleTimeString()}
             </span>
-            <StatusDot status={mapActivityType(a.type)} size="xs" className="mt-1.5" animated={false} />
+            <StatusDot
+              status={mapActivityType(a.type)}
+              size="xs"
+              className="mt-1.5"
+              animated={false}
+            />
             <div className="flex-1 min-w-0">
               <div className="text-xs font-mono uppercase text-text-secondary">
                 {a.type}
                 {!channelFilter && a.channel_id && (
                   <span className="ml-2 normal-case text-text-muted">
-                    in #{channels.find((c) => c.id === a.channel_id)?.name ?? a.channel_id.slice(0, 6)}
+                    in #
+                    {channels.find((c) => c.id === a.channel_id)?.name ?? a.channel_id.slice(0, 6)}
                   </span>
                 )}
               </div>
@@ -830,12 +1000,27 @@ function ProfileField({ label, children }: { label: string; children: React.Reac
   );
 }
 
-function InfoTag({ label, value, color }: { label: string; value: string; color: 'teal' | 'purple' | 'yellow' }) {
-  const bg = color === 'teal' ? 'bg-accent-teal' : color === 'purple' ? 'bg-accent-purple' : 'bg-accent-yellow';
+function InfoTag({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string;
+  color: 'teal' | 'purple' | 'yellow';
+}) {
+  const bg =
+    color === 'teal'
+      ? 'bg-accent-teal'
+      : color === 'purple'
+        ? 'bg-accent-purple'
+        : 'bg-accent-yellow';
   return (
     <div>
       <div className="text-xs text-text-secondary font-mono mb-1">{label}</div>
-      <span className={cn('inline-block px-2 py-1 border-2 border-black rounded font-mono text-sm', bg)}>
+      <span
+        className={cn('inline-block px-2 py-1 border-2 border-black rounded font-mono text-sm', bg)}
+      >
         {value}
       </span>
     </div>
@@ -1236,7 +1421,14 @@ function parseEnvVarsText(text: string): Record<string, string> {
 // Icons
 function ProfileIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
       <circle cx="12" cy="7" r="4" />
     </svg>
@@ -1244,7 +1436,14 @@ function ProfileIcon() {
 }
 function ActivityIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
     </svg>
   );

@@ -77,6 +77,10 @@ export function initWSBridge(): void {
         }
         break;
       }
+      case 'codex_runtime_status': {
+        useAgentsStore.getState().setCodexRuntimeStatuses(event.statuses);
+        break;
+      }
       default:
         break;
     }

@@ -1,10 +1,7 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
-import {
-  cancelApproval,
-  registerApproval,
-  type ApprovalDecision,
-} from './approval-manager.js';
+import type { CodexRuntimeState, CodexRuntimeStatus } from '@openspace/shared';
+import { cancelApproval, registerApproval, type ApprovalDecision } from './approval-manager.js';
 import type {
   AdapterCapabilities,
   BuildCommandParams,
@@ -21,6 +18,7 @@ import { parseTokenCountInfo } from './codex-session-log.js';
 const execFileAsync = promisify(execFile);
 const COMPACT_TIMEOUT_MS = 120_000;
 const APP_SERVER_KILL_GRACE_MS = 2_000;
+const APP_SERVER_STALE_MS = 120_000;
 
 type JsonRpcId = number | string;
 type JsonRpcMessage = {
@@ -154,7 +152,9 @@ function approvalDetail(
     stringFromParams(params, ['cwd', 'workdir', 'workingDirectory']);
   const diff = stringFromParams(params, ['diff', 'patch', 'changes']);
   const summary = compactJson(params.changes ?? params.files ?? params.edits);
-  return [path ? `Path: ${path}` : undefined, diff ?? summary].filter(Boolean).join('\n\n') || undefined;
+  return (
+    [path ? `Path: ${path}` : undefined, diff ?? summary].filter(Boolean).join('\n\n') || undefined
+  );
 }
 
 function errorMessageFromNotification(params: Record<string, unknown>): string {
@@ -199,9 +199,7 @@ function parseContextUsage(value: unknown): ContextUsageInfo | null {
     last,
     model_context_window: modelContextWindow,
     percent_used:
-      modelContextWindow && modelContextWindow > 0
-        ? last.input_tokens / modelContextWindow
-        : null,
+      modelContextWindow && modelContextWindow > 0 ? last.input_tokens / modelContextWindow : null,
     context_percent:
       modelContextWindow && modelContextWindow > 0
         ? (last.input_tokens / modelContextWindow) * 100
@@ -254,9 +252,9 @@ function decisionFor(
                   }
                 : 'acceptForSession';
             })()
-        : decision === 'reject'
-          ? 'decline'
-          : 'cancel';
+          : decision === 'reject'
+            ? 'decline'
+            : 'cancel';
   return { decision: protocolDecision };
 }
 
@@ -267,6 +265,7 @@ interface PendingRequest {
 
 interface ActiveTurn {
   start: number;
+  lastEventAt: number | null;
   events: CLIEvent[];
   pendingApprovalIds: Set<string>;
   options: RunnerOptions;
@@ -292,6 +291,12 @@ class CodexAppServerClient {
   private activeTurn: ActiveTurn | null = null;
   private startPromise: Promise<void> | null = null;
   private disposed = false;
+  private startedAt: number | null = null;
+  private lastMessageAt: number | null = null;
+  private lastStdoutAt: number | null = null;
+  private lastStderrAt: number | null = null;
+  private closedAt: number | null = null;
+  private lastError: string | null = null;
 
   constructor(
     readonly key: string,
@@ -301,6 +306,45 @@ class CodexAppServerClient {
 
   get busy(): boolean {
     return this.activeTurn !== null;
+  }
+
+  snapshot(now = Date.now()): CodexRuntimeStatus {
+    const meta = this.params.codexAppServerMeta;
+    return {
+      key: this.key,
+      agent_id: meta?.agentId,
+      channel_id: meta?.channelId,
+      workspace_path: meta?.workspacePath ?? this.params.workingDirectory,
+      pid: this.child?.pid ?? null,
+      state: this.runtimeState(now),
+      started_at: this.startedAt,
+      last_message_at: this.lastMessageAt,
+      last_stdout_at: this.lastStdoutAt,
+      last_stderr_at: this.lastStderrAt,
+      pending_requests: this.pendingRequests.size,
+      active_turn: this.activeTurn
+        ? {
+            thread_id: this.activeTurn.threadId,
+            turn_id: this.activeTurn.turnId,
+            started_at: this.activeTurn.start,
+            last_event_at: this.activeTurn.lastEventAt,
+            interrupting: this.activeTurn.interrupting,
+          }
+        : null,
+      error: this.lastError,
+    };
+  }
+
+  private runtimeState(now: number): CodexRuntimeState {
+    if (this.lastError) return 'error';
+    if (this.closedAt || (!this.child && !this.startPromise)) return 'exited';
+    if (this.startPromise && !this.child) return 'starting';
+    if (this.activeTurn) {
+      const lastActivity =
+        this.activeTurn.lastEventAt ?? this.lastMessageAt ?? this.activeTurn.start;
+      return now - lastActivity > APP_SERVER_STALE_MS ? 'stale' : 'busy';
+    }
+    return 'healthy';
   }
 
   async runTurn(params: BuildCommandParams, options: RunnerOptions = {}): Promise<RunnerResult> {
@@ -326,11 +370,13 @@ class CodexAppServerClient {
       return {
         exitCode: 1,
         fullText: '',
-        events: [{
-          type: 'error',
-          message: 'Codex app-server already has an active turn',
-          code: 'codex_app_server_busy',
-        }],
+        events: [
+          {
+            type: 'error',
+            message: 'Codex app-server already has an active turn',
+            code: 'codex_app_server_busy',
+          },
+        ],
         duration_ms: 0,
         timedOut: false,
         aborted: false,
@@ -378,9 +424,7 @@ class CodexAppServerClient {
           ? (threadResult as Record<string, unknown>).thread
           : null;
       const threadId =
-        thread && typeof thread === 'object'
-          ? (thread as Record<string, unknown>).id
-          : undefined;
+        thread && typeof thread === 'object' ? (thread as Record<string, unknown>).id : undefined;
       if (typeof threadId !== 'string' || !threadId) {
         throw new Error('Codex app-server did not return a thread id');
       }
@@ -462,8 +506,14 @@ class CodexAppServerClient {
       env: this.params.envVars ? { ...process.env, ...this.params.envVars } : process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    this.startedAt = Date.now();
+    this.closedAt = null;
+    this.lastError = null;
 
     this.child.stdout?.on('data', (chunk: Buffer) => {
+      const now = Date.now();
+      this.lastMessageAt = now;
+      this.lastStdoutAt = now;
       this.stdoutBuf += chunk.toString('utf8');
       let idx: number;
       while ((idx = this.stdoutBuf.indexOf('\n')) >= 0) {
@@ -484,18 +534,27 @@ class CodexAppServerClient {
     });
 
     this.child.stderr?.on('data', (chunk: Buffer) => {
+      const now = Date.now();
+      this.lastMessageAt = now;
+      this.lastStderrAt = now;
       for (const line of chunk.toString('utf8').split('\n')) {
         if (line.trim()) this.activeTurn?.options.onStderr?.(line);
       }
     });
 
     this.child.on('error', (err) => {
-      this.activeTurn?.emit({ type: 'error', message: err.message, code: 'codex_app_server_spawn_failed' });
+      this.lastError = err.message;
+      this.activeTurn?.emit({
+        type: 'error',
+        message: err.message,
+        code: 'codex_app_server_spawn_failed',
+      });
       if (this.activeTurn) this.resolveActiveTurn(this.activeTurn.finish(null));
       this.dispose();
     });
 
     this.child.on('close', (code) => {
+      this.closedAt = Date.now();
       this.rejectPendingRequests(
         new Error(`Codex app-server exited${code === null ? '' : ` (${code})`}`),
       );
@@ -528,6 +587,7 @@ class CodexAppServerClient {
   private createTurn(options: RunnerOptions): ActiveTurn {
     const turn: ActiveTurn = {
       start: Date.now(),
+      lastEventAt: null,
       events: [],
       pendingApprovalIds: new Set<string>(),
       options,
@@ -548,6 +608,7 @@ class CodexAppServerClient {
     };
 
     turn.emit = (event: CLIEvent) => {
+      turn.lastEventAt = Date.now();
       turn.events.push(event);
       if (event.type === 'text.delta') {
         turn.deltaBuffer += event.text;
@@ -637,7 +698,10 @@ class CodexAppServerClient {
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
-  private request(method: string, requestParams: Record<string, unknown> | undefined): Promise<unknown> {
+  private request(
+    method: string,
+    requestParams: Record<string, unknown> | undefined,
+  ): Promise<unknown> {
     const id = this.nextRequestId++;
     return new Promise<unknown>((resolve, reject) => {
       this.pendingRequests.set(id, { resolve, reject });
@@ -646,6 +710,7 @@ class CodexAppServerClient {
   }
 
   private handleMessage(message: JsonRpcMessage): void {
+    this.lastMessageAt = Date.now();
     if (message.id !== undefined && (message.result !== undefined || message.error)) {
       const pending = this.pendingRequests.get(message.id);
       if (!pending) return;
@@ -810,8 +875,7 @@ class CodexAppServerClient {
             success: exitCode === undefined || exitCode === 0,
             result: output,
             exit_code: exitCode,
-            duration_ms:
-              typeof record.durationMs === 'number' ? record.durationMs : undefined,
+            duration_ms: typeof record.durationMs === 'number' ? record.durationMs : undefined,
           });
         } else if (record.type === 'reasoning') {
           turn.emit({ type: 'thinking.completed' });
@@ -866,7 +930,6 @@ class CodexAppServerClient {
         break;
     }
   }
-
 }
 
 const appServerClients = new Map<string, CodexAppServerClient>();
@@ -902,6 +965,11 @@ export function snapshotCodexAppServers(): {
   };
 }
 
+export function listCodexAppServerStatuses(): CodexRuntimeStatus[] {
+  const now = Date.now();
+  return Array.from(appServerClients.values()).map((client) => client.snapshot(now));
+}
+
 export class CodexAppServerAdapter implements CLIAdapter {
   readonly name = 'codex';
 
@@ -934,7 +1002,9 @@ export class CodexAppServerAdapter implements CLIAdapter {
           return;
         }
         const version = out.trim() || undefined;
-        const help = spawn('codex', ['app-server', '--help'], { stdio: ['ignore', 'pipe', 'pipe'] });
+        const help = spawn('codex', ['app-server', '--help'], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
         let helpErr = '';
         help.stderr?.on('data', (d) => (helpErr += d.toString()));
         help.on('error', (e) => resolve({ installed: false, version, error: e.message }));
@@ -1004,10 +1074,13 @@ export async function compactCodexThread(input: {
 
   let nextRequestId = 1;
   let stdoutBuf = '';
-  const pendingRequests = new Map<JsonRpcId, {
-    resolve: (value: unknown) => void;
-    reject: (error: Error) => void;
-  }>();
+  const pendingRequests = new Map<
+    JsonRpcId,
+    {
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+    }
+  >();
   let compacted = false;
   let settled = false;
   let lastError = '';

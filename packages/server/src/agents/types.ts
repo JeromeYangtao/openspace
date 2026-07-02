@@ -134,6 +134,11 @@ export interface BuildCommandParams {
    * Other adapters ignore this field.
    */
   codexAppServerKey?: string;
+  codexAppServerMeta?: {
+    agentId: string;
+    channelId: string;
+    workspacePath: string;
+  };
 }
 
 export interface SpawnSpec {

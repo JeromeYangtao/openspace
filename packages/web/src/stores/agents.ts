@@ -1,6 +1,12 @@
 import { create } from 'zustand';
-import type { Agent, AgentContextUsage, AgentRunStatus, AgentStatus } from '@openspace/shared';
-import { listActiveAgentRuns, listAgents } from '../lib/api';
+import type {
+  Agent,
+  AgentContextUsage,
+  AgentRunStatus,
+  AgentStatus,
+  CodexRuntimeStatus,
+} from '@openspace/shared';
+import { getCodexAppServerStatuses, listActiveAgentRuns, listAgents } from '../lib/api';
 
 /**
  * Agents store
@@ -41,14 +47,17 @@ interface AgentsState {
    */
   runStartedAtByAgentChannel: Map<string, Map<string, number>>;
   contextUsageByAgentChannel: Map<string, Map<string, AgentContextUsageSnapshot>>;
+  codexRuntimeByAgentChannel: Map<string, Map<string, CodexRuntimeStatus>>;
 
   refresh: () => Promise<void>;
   refreshActiveRuns: () => Promise<void>;
+  refreshCodexRuntimeStatuses: () => Promise<void>;
   upsert: (agent: Agent) => void;
   remove: (id: string) => void;
   setChannelRunStatus: (agentId: string, channelId: string, status: AgentRunStatus) => void;
   clearChannelRun: (agentId: string, channelId: string) => void;
   setContextUsage: (agentId: string, channelId: string, usage: AgentContextUsage) => void;
+  setCodexRuntimeStatuses: (statuses: CodexRuntimeStatus[]) => void;
   /** 是否有任意活跃 run（thinking / working） */
   isAgentActive: (agentId: string) => boolean;
   /** 派生该 agent 的展示状态（任意活跃 run 优先；否则 'idle'） */
@@ -56,6 +65,7 @@ interface AgentsState {
   /** 该 agent 在指定 channel 的 run 状态（无活跃 run 返回 undefined） */
   getChannelRunStatus: (agentId: string, channelId: string) => AgentRunStatus | undefined;
   getLatestContextUsage: (agentId: string) => AgentContextUsageSnapshot | undefined;
+  getCodexRuntimeStatus: (agentId: string, channelId?: string) => CodexRuntimeStatus | undefined;
   /** Sprint 8 / Lo-22: 该 channel 内所有活跃 (status != idle) 的 runs */
   getActiveRunsInChannel: (channelId: string) => ActiveRun[];
   getById: (id: string) => Agent | undefined;
@@ -69,6 +79,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
   runByAgentChannel: new Map(),
   runStartedAtByAgentChannel: new Map(),
   contextUsageByAgentChannel: new Map(),
+  codexRuntimeByAgentChannel: new Map(),
 
   refresh: async () => {
     const agents = await listAgents();
@@ -96,6 +107,10 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
       runStartedAtByAgentChannel: nextStart,
     });
   },
+  refreshCodexRuntimeStatuses: async () => {
+    const { statuses } = await getCodexAppServerStatuses();
+    get().setCodexRuntimeStatuses(statuses);
+  },
   upsert: (agent) =>
     set((s) => {
       const idx = s.agents.findIndex((a) => a.id === agent.id);
@@ -114,11 +129,14 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
       nextStart.delete(id);
       const nextUsage = new Map(s.contextUsageByAgentChannel);
       nextUsage.delete(id);
+      const nextRuntime = new Map(s.codexRuntimeByAgentChannel);
+      nextRuntime.delete(id);
       return {
         agents: s.agents.filter((a) => a.id !== id),
         runByAgentChannel: nextMap,
         runStartedAtByAgentChannel: nextStart,
         contextUsageByAgentChannel: nextUsage,
+        codexRuntimeByAgentChannel: nextRuntime,
       };
     }),
 
@@ -132,9 +150,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
       // Sprint 8 / Lo-22: 仅当 active run **首次进入** thinking/working 时记 startedAt；
       // thinking → working 切换不重置（保留连续等待感）
       const nextStart = new Map(s.runStartedAtByAgentChannel);
-      const innerStart = new Map(
-        nextStart.get(agentId) ?? new Map<string, number>(),
-      );
+      const innerStart = new Map(nextStart.get(agentId) ?? new Map<string, number>());
       const isActive = status === 'thinking' || status === 'working';
       if (isActive && !innerStart.has(channelId)) {
         innerStart.set(channelId, Date.now());
@@ -153,9 +169,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
   setContextUsage: (agentId, channelId, usage) =>
     set((s) => {
       const next = new Map(s.contextUsageByAgentChannel);
-      const inner = new Map(
-        next.get(agentId) ?? new Map<string, AgentContextUsageSnapshot>(),
-      );
+      const inner = new Map(next.get(agentId) ?? new Map<string, AgentContextUsageSnapshot>());
       inner.set(channelId, {
         ...usage,
         agentId,
@@ -164,6 +178,18 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
       });
       next.set(agentId, inner);
       return { contextUsageByAgentChannel: next };
+    }),
+
+  setCodexRuntimeStatuses: (statuses) =>
+    set(() => {
+      const next = new Map<string, Map<string, CodexRuntimeStatus>>();
+      for (const status of statuses) {
+        if (!status.agent_id || !status.channel_id) continue;
+        const inner = new Map(next.get(status.agent_id) ?? new Map<string, CodexRuntimeStatus>());
+        inner.set(status.channel_id, status);
+        next.set(status.agent_id, inner);
+      }
+      return { codexRuntimeByAgentChannel: next };
     }),
 
   clearChannelRun: (agentId, channelId) =>
@@ -224,14 +250,22 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
     return Array.from(inner.values()).sort((a, b) => b.updatedAt - a.updatedAt)[0];
   },
 
+  getCodexRuntimeStatus: (agentId, channelId) => {
+    const inner = get().codexRuntimeByAgentChannel.get(agentId);
+    if (!inner) return undefined;
+    if (channelId) return inner.get(channelId);
+    return Array.from(inner.values()).sort(
+      (a, b) => (b.last_message_at ?? 0) - (a.last_message_at ?? 0),
+    )[0];
+  },
+
   getActiveRunsInChannel: (channelId) => {
     const state = get();
     const result: ActiveRun[] = [];
     for (const [agentId, inner] of state.runByAgentChannel.entries()) {
       const status = inner.get(channelId);
       if (!status || (status !== 'thinking' && status !== 'working')) continue;
-      const startedAt =
-        state.runStartedAtByAgentChannel.get(agentId)?.get(channelId) ?? Date.now();
+      const startedAt = state.runStartedAtByAgentChannel.get(agentId)?.get(channelId) ?? Date.now();
       result.push({ agentId, channelId, status, startedAt });
     }
     return result.sort((a, b) => a.startedAt - b.startedAt);

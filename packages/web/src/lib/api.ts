@@ -20,6 +20,7 @@ import type {
   ProjectOnboarding,
   ReviewStatus,
   RuntimeDetection,
+  CodexRuntimeStatus,
   Task,
   TaskStatus,
   TeamSuggestion,
@@ -63,6 +64,8 @@ export const getHealth = () => request<Health>('/api/health');
 export const getRuntimes = () => request<RuntimeDetection[]>('/api/runtimes');
 export const getRuntimeModels = (id: Runtime) =>
   request<{ models: string[]; note?: string; error?: string }>(`/api/runtimes/${id}/models`);
+export const getCodexAppServerStatuses = () =>
+  request<{ statuses: CodexRuntimeStatus[] }>('/api/runtimes/codex/app-servers');
 
 export interface AuthUser {
   id: string;
@@ -104,11 +107,7 @@ export const updateCurrentUserProfile = (data: {
   });
 export const listUsers = () => request<AuthUser[]>('/api/users');
 export const listAdminUsers = () => request<AuthUser[]>('/api/admin/users');
-export const createUser = (data: {
-  username: string;
-  displayName?: string;
-  password: string;
-}) =>
+export const createUser = (data: { username: string; displayName?: string; password: string }) =>
   request<AuthUser>('/api/admin/users', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -133,12 +132,8 @@ export const enableUser = (id: string) =>
 
 // Cursor backend settings (Sprint 4-ext / S-1 收尾)
 export const getCursorSettings = (validate = false) =>
-  request<CursorBackendStatus>(
-    `/api/settings/cursor${validate ? '?validate=true' : ''}`,
-  );
-export const updateCursorSettings = (
-  data: CursorBackendUpdateInput & { validate?: boolean },
-) =>
+  request<CursorBackendStatus>(`/api/settings/cursor${validate ? '?validate=true' : ''}`);
+export const updateCursorSettings = (data: CursorBackendUpdateInput & { validate?: boolean }) =>
   request<CursorBackendStatus>('/api/settings/cursor', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -221,8 +216,7 @@ export const getChannelMessages = (
   const q = qs.toString();
   return request<ChatMessage[]>(`/api/channels/${id}/messages${q ? '?' + q : ''}`);
 };
-export const getChannelAgents = (id: string) =>
-  request<Agent[]>(`/api/channels/${id}/agents`);
+export const getChannelAgents = (id: string) => request<Agent[]>(`/api/channels/${id}/agents`);
 export const stopAllAgents = (id: string) =>
   request<{ stopped: number }>(`/api/channels/${id}/stop-all`, {
     method: 'POST',
@@ -255,8 +249,7 @@ export const updateAgent = (id: string, patch: Partial<Agent>) =>
     method: 'PATCH',
     body: JSON.stringify(patch),
   });
-export const deleteAgent = (id: string) =>
-  request<void>(`/api/agents/${id}`, { method: 'DELETE' });
+export const deleteAgent = (id: string) => request<void>(`/api/agents/${id}`, { method: 'DELETE' });
 export const startAgent = (id: string) =>
   request<{ ok: boolean }>(`/api/agents/${id}/start`, { method: 'POST' });
 export const stopAgent = (id: string) =>
@@ -272,10 +265,7 @@ export const getAgentContextUsage = (id: string, channelId: string) =>
   request<AgentContextUsage>(
     `/api/agents/${id}/context-usage?channel_id=${encodeURIComponent(channelId)}`,
   );
-export const getAgentActivity = (
-  id: string,
-  opts?: { channel_id?: string; limit?: number },
-) => {
+export const getAgentActivity = (id: string, opts?: { channel_id?: string; limit?: number }) => {
   const qs = new URLSearchParams();
   if (opts?.channel_id) qs.set('channel_id', opts.channel_id);
   if (opts?.limit) qs.set('limit', String(opts.limit));
@@ -309,8 +299,7 @@ export interface PendingAgentApproval {
   createdAt: number;
 }
 
-export const listAgentApprovals = () =>
-  request<PendingAgentApproval[]>('/api/agent-approvals');
+export const listAgentApprovals = () => request<PendingAgentApproval[]>('/api/agent-approvals');
 // CP8.5：getAgentWorkspace 已删除（D-8 v1.0 修订：agent 无独立 workspace）。
 // 旧前端组件如 AgentProfilePanel 的 WORKSPACE Tab 已在 CP6 中删除。
 export const joinChannel = (channelId: string, agentId: string) =>
@@ -348,8 +337,7 @@ export const createTask = (data: {
 }) => request<Task>('/api/tasks', { method: 'POST', body: JSON.stringify(data) });
 export const updateTask = (id: number, patch: Partial<Task>) =>
   request<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
-export const deleteTask = (id: number) =>
-  request<void>(`/api/tasks/${id}`, { method: 'DELETE' });
+export const deleteTask = (id: number) => request<void>(`/api/tasks/${id}`, { method: 'DELETE' });
 
 // 全局/辅助
 export const searchMessages = (q: string, channelId?: string) => {
@@ -358,8 +346,7 @@ export const searchMessages = (q: string, channelId?: string) => {
   return request<ChatMessage[]>(`/api/messages/search?${qs.toString()}`);
 };
 
-export const listGlobalThreads = () =>
-  request<ChatMessage[]>('/api/threads');
+export const listGlobalThreads = () => request<ChatMessage[]>('/api/threads');
 
 export const saveMessage = (id: string) =>
   request<{ ok: boolean }>(`/api/messages/${id}/save`, { method: 'POST' });
@@ -382,8 +369,7 @@ export const listSaved = () => request<ChatMessage[]>('/api/saved');
 export const listProjectWorkflows = (projectId: string) =>
   request<Workflow[]>(`/api/projects/${projectId}/workflows`);
 
-export const getWorkflow = (id: string) =>
-  request<Workflow>(`/api/workflows/${id}`);
+export const getWorkflow = (id: string) => request<Workflow>(`/api/workflows/${id}`);
 
 export const createWorkflow = (
   projectId: string,
@@ -564,10 +550,9 @@ export const listAgentFeedback = (agentId: string) =>
   request<AgentFeedback[]>(`/api/agents/${agentId}/feedback`);
 
 export const runCoachForAgent = (agentId: string) =>
-  request<{ feedback: AgentFeedback | null }>(
-    `/api/agents/${agentId}/feedback/run-coach`,
-    { method: 'POST' },
-  );
+  request<{ feedback: AgentFeedback | null }>(`/api/agents/${agentId}/feedback/run-coach`, {
+    method: 'POST',
+  });
 
 export const applyAgentFeedback = (id: number) =>
   request<AgentFeedback>(`/api/feedback/${id}/apply`, { method: 'POST' });

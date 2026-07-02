@@ -68,7 +68,35 @@ export type ServerEvent =
    */
   | { type: 'project_list_changed'; reason: 'opened' | 'closed' | 'deleted' | 'updated' }
   | { type: 'knowledge_updated'; project_id: string; kind: 'decision' | 'lesson' }
+  | {
+      type: 'codex_runtime_status';
+      statuses: CodexRuntimeStatus[];
+    }
   | { type: 'error'; code: string; message: string };
+
+export type CodexRuntimeState = 'starting' | 'healthy' | 'busy' | 'stale' | 'exited' | 'error';
+
+export interface CodexRuntimeStatus {
+  key: string;
+  agent_id?: string;
+  channel_id?: string;
+  workspace_path?: string;
+  pid: number | null;
+  state: CodexRuntimeState;
+  started_at: number | null;
+  last_message_at: number | null;
+  last_stdout_at: number | null;
+  last_stderr_at: number | null;
+  pending_requests: number;
+  active_turn: {
+    thread_id: string | null;
+    turn_id: string | null;
+    started_at: number;
+    last_event_at: number | null;
+    interrupting: boolean;
+  } | null;
+  error?: string | null;
+}
 
 /**
  * Agent 执行过程事件。

@@ -50,12 +50,13 @@ import { workflowSessionRoutes } from './routes/workflow-sessions.js';
 import { registerWSRoute } from './ws/handler.js';
 import { hub } from './ws/hub.js';
 import { concurrencyQueue } from './agents/queue.js';
-import {
-  recoverInterruptedAgentRuns,
-  snapshotRunManager,
-} from './agents/run-manager.js';
+import { recoverInterruptedAgentRuns, snapshotRunManager } from './agents/run-manager.js';
 import { snapshotRunWorker, startRunWorker, stopRunWorker } from './agents/run-worker.js';
 import { snapshotCodexAppServers } from './agents/codex-app-server-adapter.js';
+import {
+  startCodexRuntimeMonitor,
+  stopCodexRuntimeMonitor,
+} from './agents/codex-runtime-monitor.js';
 import { projectsService } from './config/projects-service.js';
 import { warmUpAllProjects } from './routes/_helpers.js';
 import { registerStaticDocs } from './static-docs.js';
@@ -137,19 +138,13 @@ async function main() {
       const db = openProjectDb(p.workspace_path);
       const res = importBuiltinsForProject(db);
       if (res.imported > 0) {
-        app.log.info(
-          { project: p.name, ...res },
-          '[workflows] builtin templates seeded',
-        );
+        app.log.info({ project: p.name, ...res }, '[workflows] builtin templates seeded');
       }
       for (const wf of workflowRepo.list(db)) {
         try {
           deriveResponsibilitiesForWorkflow(db, wf.id);
         } catch (e) {
-          app.log.warn(
-            { err: e, workflow: wf.name, project: p.name },
-            '[workflows] derive failed',
-          );
+          app.log.warn({ err: e, workflow: wf.name, project: p.name }, '[workflows] derive failed');
         }
       }
     } catch (e) {
@@ -202,6 +197,7 @@ async function main() {
     error: (m: string) => app.log.error(m),
   });
   startRunWorker({ logger: app.log });
+  startCodexRuntimeMonitor({ logger: app.log });
 
   try {
     await app.listen({ port: config.port, host: config.host });
@@ -211,6 +207,7 @@ async function main() {
 
     const onShutdown = () => {
       app.log.info('shutting down...');
+      stopCodexRuntimeMonitor();
       stopRunWorker();
       closeAuthDb();
       closeAllDbs();

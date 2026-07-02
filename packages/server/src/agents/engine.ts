@@ -41,11 +41,7 @@ import { attachApprovalContext } from './approval-manager.js';
 import { concurrencyQueue } from './queue.js';
 import { runWithAdapter } from './runner.js';
 import { createAdapterForRuntime } from './adapter-factory.js';
-import {
-  completeAgentRun,
-  registerAgentRun,
-  serverInstanceId,
-} from './run-manager.js';
+import { completeAgentRun, registerAgentRun, serverInstanceId } from './run-manager.js';
 import type { CLIAdapter, CLIEvent } from './types.js';
 export { abortAgentRun, abortChannelAgentRuns } from './run-manager.js';
 
@@ -75,7 +71,11 @@ export interface TriggerResult {
 
 export interface AgentEngineDeps {
   db: Database;
-  logger?: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void };
+  logger?: {
+    info: (msg: string) => void;
+    warn: (msg: string) => void;
+    error: (msg: string) => void;
+  };
 }
 
 /**
@@ -224,6 +224,14 @@ export async function triggerAgent(
             : null,
         codexAppServerKey:
           agent.runtime === 'codex' ? `${cwd}:${agent.id}:${ctx.channelId}` : undefined,
+        codexAppServerMeta:
+          agent.runtime === 'codex'
+            ? {
+                agentId: agent.id,
+                channelId: ctx.channelId,
+                workspacePath: cwd,
+              }
+            : undefined,
       },
       {
         signal,
@@ -313,7 +321,8 @@ export async function triggerAgent(
   const result = runResult.result;
   const fullText = result.fullText.trim();
   const hasError = result.events.some((e) => e.type === 'error');
-  const finalOk = !result.timedOut && !hasError && (result.exitCode === 0 || result.exitCode === null);
+  const finalOk =
+    !result.timedOut && !hasError && (result.exitCode === 0 || result.exitCode === null);
 
   // 7. 更新占位消息的最终 content / metadata
   const finalMetadata: MessageMetadata = {
@@ -328,7 +337,9 @@ export async function triggerAgent(
       output_tokens_estimate: Math.ceil(fullText.length / 4),
     },
     tool_calls: result.events
-      .filter((e): e is Extract<CLIEvent, { type: 'tool.completed' }> => e.type === 'tool.completed')
+      .filter(
+        (e): e is Extract<CLIEvent, { type: 'tool.completed' }> => e.type === 'tool.completed',
+      )
       .map((e) => ({
         tool: e.tool,
         args: {},
@@ -349,7 +360,8 @@ export async function triggerAgent(
     }
   }
 
-  const finalContent = fullText || (finalOk ? '(no response)' : 'Agent failed to produce a response.');
+  const finalContent =
+    fullText || (finalOk ? '(no response)' : 'Agent failed to produce a response.');
   messageRepo.updateContent(db, placeholder.id, finalContent, finalMetadata);
   const updated = messageRepo.getById(db, placeholder.id) ?? placeholder;
 
@@ -411,9 +423,7 @@ function stripTriggerMentions(content: string, targetAgentName: string): string 
   for (const mention of mentions.sort((a, b) => b.start - a.start)) {
     stripped = `${stripped.slice(0, mention.start)}${stripped.slice(mention.end)}`;
   }
-  return stripped
-    .replace(/[ \t]+([，。！？,.!?;；:：])/g, '$1')
-    .replace(/[ \t]{2,}/g, ' ');
+  return stripped.replace(/[ \t]+([，。！？,.!?;；:：])/g, '$1').replace(/[ \t]{2,}/g, ' ');
 }
 
 function toAgentActivityPayload(event: CLIEvent): AgentActivityPayload {
@@ -475,11 +485,7 @@ function broadcastAgentActivity(
  * 仅 emit WebSocket 事件；不再写 agents.status（字段已删除，状态从 agent_runs 派生）。
  * 前端通过 ws-bridge 接收事件并维护 per-channel run map（D-1 / D-18）。
  */
-function broadcastAgentStatus(
-  agentId: string,
-  status: AgentStatus,
-  channelId: string,
-): void {
+function broadcastAgentStatus(agentId: string, status: AgentStatus, channelId: string): void {
   hub.broadcastGlobal({
     type: 'agent_status',
     agent_id: agentId,
@@ -535,17 +541,15 @@ function collectSkillKeysFromEvents(
     if (!haystack) continue;
     // 抓所有看起来像 workspace 内相对路径的片段
     // 形式 1：绝对路径包含 workspacePath
-    const absRe = new RegExp(
-      `${escapeRegex(wsAbs)}\\/([\\w.-]+(?:\\/[\\w.-]+)?)`,
-      'g',
-    );
+    const absRe = new RegExp(`${escapeRegex(wsAbs)}\\/([\\w.-]+(?:\\/[\\w.-]+)?)`, 'g');
     let m;
     while ((m = absRe.exec(haystack))) {
       const seg = m[1];
       if (seg) keys.add(normalizeKey(seg));
     }
     // 形式 2：相对路径直接出现（启发式：以 src/ tests/ scripts/ 等开头）
-    const relRe = /(?:^|[\s,(])((?:src|tests?|spec|scripts?|packages|apps|lib|docs|public)\/[\w.-]+(?:\/[\w.-]+)?)/g;
+    const relRe =
+      /(?:^|[\s,(])((?:src|tests?|spec|scripts?|packages|apps|lib|docs|public)\/[\w.-]+(?:\/[\w.-]+)?)/g;
     while ((m = relRe.exec(haystack))) {
       const seg = m[1];
       if (seg) keys.add(normalizeKey(seg));

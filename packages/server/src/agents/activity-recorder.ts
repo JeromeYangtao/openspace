@@ -1,17 +1,8 @@
 /**
  * ActivityRecorder — 按 D-3 规则写入 agent_activity 表
  *
- * 记录事件：
- *   - spawn 开始     → type=thinking
- *   - 首个 text/tool → type=working
- *   - tool.started   → type=working
- *   - tool.completed → type=output
- *   - session.completed → type=idle
- *   - error          → type=error
- *
- * 不记录：text.delta / thinking.delta（会爆炸）
- *
- * v1.0 修订（CP3 / K-3）：每次 append 带 channel_id，便于 Profile Activity Tab 按 channel 过滤。
+ * 不记录 text.delta / thinking.delta 的每个增量，只在首次增量时写 working。
+ * Activity 写入失败不能影响正在运行的 agent。
  */
 
 import type { Database } from 'better-sqlite3';
@@ -19,90 +10,79 @@ import { activityRepo } from '../db/repos.js';
 import { summarizeToolArgs } from './summarize-tool-args.js';
 import type { CLIEvent } from './types.js';
 
+type ActivityType = 'thinking' | 'working' | 'output' | 'idle' | 'error';
+
 export class ActivityRecorder {
   private hasEmittedWorking = false;
 
   constructor(
     private db: Database,
     private agentId: string,
-    /** v1.0 新增：活动归属的 channel（K-3） */
     private channelId: string | null = null,
   ) {}
 
   spawnStart(detail: string): void {
-    activityRepo.append(this.db, {
-      agent_id: this.agentId,
-      channel_id: this.channelId,
-      type: 'thinking',
-      detail,
-    });
+    this.append('thinking', detail);
   }
 
   recordEvent(event: CLIEvent): void {
-    switch (event.type) {
-      case 'text.delta':
-      case 'thinking.delta':
-        if (!this.hasEmittedWorking) {
+    try {
+      switch (event.type) {
+        case 'text.delta':
+        case 'thinking.delta':
+          if (!this.hasEmittedWorking) {
+            this.hasEmittedWorking = true;
+            this.append('working', 'Started generating response');
+          }
+          break;
+
+        case 'tool.started': {
           this.hasEmittedWorking = true;
-          activityRepo.append(this.db, {
-            agent_id: this.agentId,
-            channel_id: this.channelId,
-            type: 'working',
-            detail: 'Started generating response',
-          });
+          const summary = summarizeToolArgs(event.tool, event.args);
+          this.append('working', summary ? `${event.tool}: ${summary}` : event.tool);
+          break;
         }
-        break;
 
-      case 'tool.started': {
-        this.hasEmittedWorking = true;
-        const summary = summarizeToolArgs(event.tool, event.args);
-        activityRepo.append(this.db, {
-          agent_id: this.agentId,
-          channel_id: this.channelId,
-          type: 'working',
-          detail: summary ? `${event.tool}: ${summary}` : event.tool,
-        });
-        break;
+        case 'tool.completed':
+          this.append(
+            'output',
+            `${event.tool} ${event.success ? '✓' : '✗'} exit=${event.exit_code ?? '?'}`,
+          );
+          break;
+
+        case 'approval.required':
+          this.append(
+            event.supported ? 'working' : 'error',
+            event.command ? `${event.title}: ${event.command}` : event.title,
+          );
+          break;
+
+        case 'session.completed':
+          this.append('idle', `Completed in ${event.duration_ms ?? '?'}ms`);
+          break;
+
+        case 'error':
+          this.append('error', `${event.code ?? 'error'}: ${event.message}`);
+          break;
+
+        default:
+          break;
       }
+    } catch {
+      /* Activity recording must never interrupt an active agent run. */
+    }
+  }
 
-      case 'tool.completed':
-        activityRepo.append(this.db, {
-          agent_id: this.agentId,
-          channel_id: this.channelId,
-          type: 'output',
-          detail: `${event.tool} ${event.success ? '✓' : '✗'} exit=${event.exit_code ?? '?'}`,
-        });
-        break;
-
-      case 'approval.required':
-        activityRepo.append(this.db, {
-          agent_id: this.agentId,
-          channel_id: this.channelId,
-          type: event.supported ? 'working' : 'error',
-          detail: event.command ? `${event.title}: ${event.command}` : event.title,
-        });
-        break;
-
-      case 'session.completed':
-        activityRepo.append(this.db, {
-          agent_id: this.agentId,
-          channel_id: this.channelId,
-          type: 'idle',
-          detail: `Completed in ${event.duration_ms ?? '?'}ms`,
-        });
-        break;
-
-      case 'error':
-        activityRepo.append(this.db, {
-          agent_id: this.agentId,
-          channel_id: this.channelId,
-          type: 'error',
-          detail: `${event.code ?? 'error'}: ${event.message}`,
-        });
-        break;
-
-      default:
-        break;
+  private append(type: ActivityType, detail: string): void {
+    try {
+      activityRepo.append(this.db, {
+        agent_id: this.agentId,
+        channel_id: this.channelId,
+        type,
+        detail,
+      });
+    } catch {
+      /* Ignore closed DB handles or transient activity-write failures. */
     }
   }
 }

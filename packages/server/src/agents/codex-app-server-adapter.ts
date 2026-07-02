@@ -1,6 +1,5 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
-import { PROCESS_IDLE_TIMEOUT_MS } from '@openspace/shared';
 import {
   cancelApproval,
   registerApproval,
@@ -21,9 +20,7 @@ import { parseTokenCountInfo } from './codex-session-log.js';
 
 const execFileAsync = promisify(execFile);
 const COMPACT_TIMEOUT_MS = 120_000;
-const APP_SERVER_IDLE_TIMEOUT_MS = 10 * 60_000;
 const APP_SERVER_KILL_GRACE_MS = 2_000;
-const TURN_INTERRUPT_TIMEOUT_MS = 15_000;
 
 type JsonRpcId = number | string;
 type JsonRpcMessage = {
@@ -270,7 +267,6 @@ interface PendingRequest {
 
 interface ActiveTurn {
   start: number;
-  idleTimeoutMs: number;
   events: CLIEvent[];
   pendingApprovalIds: Set<string>;
   options: RunnerOptions;
@@ -283,10 +279,7 @@ interface ActiveTurn {
   threadId: string | null;
   turnId: string | null;
   interrupting: boolean;
-  interruptTimer: NodeJS.Timeout | null;
   settled: boolean;
-  timeoutHandle: NodeJS.Timeout | null;
-  resetIdleTimer: () => void;
   finish: (exitCode: number | null) => RunnerResult;
   emit: (event: CLIEvent) => void;
 }
@@ -298,7 +291,6 @@ class CodexAppServerClient {
   private readonly pendingRequests = new Map<JsonRpcId, PendingRequest>();
   private activeTurn: ActiveTurn | null = null;
   private startPromise: Promise<void> | null = null;
-  private idleCloseTimer: NodeJS.Timeout | null = null;
   private disposed = false;
 
   constructor(
@@ -347,7 +339,6 @@ class CodexAppServerClient {
 
     const turn = this.createTurn(options);
     this.activeTurn = turn;
-    turn.resetIdleTimer();
 
     const onAbort = () => this.abortActiveTurn();
 
@@ -423,14 +414,12 @@ class CodexAppServerClient {
         code: 'codex_app_server_setup_failed',
       });
       this.resolveActiveTurn(turn.finish(null));
-      this.dispose();
     }
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.clearIdleCloseTimer();
     this.rejectPendingRequests(new Error('Codex app-server disposed'));
     if (this.activeTurn && !this.activeTurn.settled) {
       this.activeTurn.emit({
@@ -456,7 +445,6 @@ class CodexAppServerClient {
   }
 
   private async ensureStarted(): Promise<void> {
-    this.clearIdleCloseTimer();
     if (this.child && !this.disposed) return;
     if (this.startPromise) return this.startPromise;
     this.disposed = false;
@@ -476,7 +464,6 @@ class CodexAppServerClient {
     });
 
     this.child.stdout?.on('data', (chunk: Buffer) => {
-      this.activeTurn?.resetIdleTimer();
       this.stdoutBuf += chunk.toString('utf8');
       let idx: number;
       while ((idx = this.stdoutBuf.indexOf('\n')) >= 0) {
@@ -497,7 +484,6 @@ class CodexAppServerClient {
     });
 
     this.child.stderr?.on('data', (chunk: Buffer) => {
-      this.activeTurn?.resetIdleTimer();
       for (const line of chunk.toString('utf8').split('\n')) {
         if (line.trim()) this.activeTurn?.options.onStderr?.(line);
       }
@@ -516,10 +502,8 @@ class CodexAppServerClient {
       if (this.activeTurn && !this.activeTurn.settled) {
         this.activeTurn.emit({
           type: 'error',
-          message: this.activeTurn.timedOut
-            ? `Codex app-server timed out after ${this.activeTurn.idleTimeoutMs}ms without activity`
-            : `Codex app-server exited before turn completed${code === null ? '' : ` (${code})`}`,
-          code: this.activeTurn.timedOut ? 'timeout' : 'codex_app_server_exited',
+          message: `Codex app-server exited before turn completed${code === null ? '' : ` (${code})`}`,
+          code: 'codex_app_server_exited',
         });
         this.resolveActiveTurn(this.activeTurn.finish(code));
       }
@@ -544,7 +528,6 @@ class CodexAppServerClient {
   private createTurn(options: RunnerOptions): ActiveTurn {
     const turn: ActiveTurn = {
       start: Date.now(),
-      idleTimeoutMs: options.timeoutMs ?? PROCESS_IDLE_TIMEOUT_MS,
       events: [],
       pendingApprovalIds: new Set<string>(),
       options,
@@ -557,10 +540,7 @@ class CodexAppServerClient {
       threadId: null,
       turnId: null,
       interrupting: false,
-      interruptTimer: null,
       settled: false,
-      timeoutHandle: null,
-      resetIdleTimer: () => {},
       finish: () => {
         throw new Error('turn.finish called before initialization');
       },
@@ -568,7 +548,6 @@ class CodexAppServerClient {
     };
 
     turn.emit = (event: CLIEvent) => {
-      turn.resetIdleTimer();
       turn.events.push(event);
       if (event.type === 'text.delta') {
         turn.deltaBuffer += event.text;
@@ -598,19 +577,6 @@ class CodexAppServerClient {
       };
     };
 
-    turn.resetIdleTimer = () => {
-      if (turn.timeoutHandle) clearTimeout(turn.timeoutHandle);
-      turn.timeoutHandle = setTimeout(() => {
-        if (turn.pendingApprovalIds.size > 0) {
-          turn.resetIdleTimer();
-          return;
-        }
-        turn.timedOut = true;
-        this.abortActiveTurn(false);
-      }, turn.idleTimeoutMs);
-      turn.timeoutHandle.unref();
-    };
-
     return turn;
   }
 
@@ -627,20 +593,8 @@ class CodexAppServerClient {
         message: 'Codex turn interrupt unavailable before turn start completed',
         code: 'codex_turn_interrupt_unavailable',
       });
-      this.dispose();
       return;
     }
-
-    turn.interruptTimer = setTimeout(() => {
-      if (this.activeTurn !== turn || turn.settled) return;
-      turn.emit({
-        type: 'error',
-        message: `Codex turn interrupt timed out after ${TURN_INTERRUPT_TIMEOUT_MS}ms`,
-        code: 'codex_turn_interrupt_timeout',
-      });
-      this.dispose();
-    }, TURN_INTERRUPT_TIMEOUT_MS);
-    turn.interruptTimer.unref();
 
     void this.request('turn/interrupt', {
       threadId: turn.threadId,
@@ -652,7 +606,6 @@ class CodexAppServerClient {
         message: `Codex turn interrupt failed: ${(e as Error).message}`,
         code: 'codex_turn_interrupt_failed',
       });
-      this.dispose();
     });
   }
 
@@ -660,14 +613,9 @@ class CodexAppServerClient {
     const turn = this.activeTurn;
     if (!turn || turn.settled) return;
     turn.settled = true;
-    if (turn.timeoutHandle) clearTimeout(turn.timeoutHandle);
-    if (turn.interruptTimer) clearTimeout(turn.interruptTimer);
     this.cleanupApprovals(turn);
     this.activeTurn = null;
     turn.resolve(result);
-    if (!this.disposed && this.child) {
-      this.scheduleIdleClose();
-    }
   }
 
   private cleanupApprovals(turn: ActiveTurn): void {
@@ -698,7 +646,6 @@ class CodexAppServerClient {
   }
 
   private handleMessage(message: JsonRpcMessage): void {
-    this.activeTurn?.resetIdleTimer();
     if (message.id !== undefined && (message.result !== undefined || message.error)) {
       const pending = this.pendingRequests.get(message.id);
       if (!pending) return;
@@ -764,7 +711,6 @@ class CodexAppServerClient {
       reason,
       policyAmendment,
       decide: (decision) => {
-        turn.resetIdleTimer();
         turn.pendingApprovalIds.delete(approval.id);
         const result = decisionFor(kind, decision, requestParams);
         if (!result) {
@@ -921,19 +867,6 @@ class CodexAppServerClient {
     }
   }
 
-  private scheduleIdleClose(): void {
-    this.clearIdleCloseTimer();
-    this.idleCloseTimer = setTimeout(() => {
-      if (!this.activeTurn) this.dispose();
-    }, APP_SERVER_IDLE_TIMEOUT_MS);
-    this.idleCloseTimer.unref();
-  }
-
-  private clearIdleCloseTimer(): void {
-    if (!this.idleCloseTimer) return;
-    clearTimeout(this.idleCloseTimer);
-    this.idleCloseTimer = null;
-  }
 }
 
 const appServerClients = new Map<string, CodexAppServerClient>();
@@ -953,13 +886,6 @@ function getAppServerClient(params: BuildCommandParams): CodexAppServerClient {
   });
   appServerClients.set(key, client);
   return client;
-}
-
-export function disposeCodexAppServers(): void {
-  for (const client of [...appServerClients.values()]) {
-    client.dispose();
-  }
-  appServerClients.clear();
 }
 
 export function snapshotCodexAppServers(): {

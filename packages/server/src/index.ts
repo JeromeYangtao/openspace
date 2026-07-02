@@ -55,10 +55,7 @@ import {
   snapshotRunManager,
 } from './agents/run-manager.js';
 import { snapshotRunWorker, startRunWorker, stopRunWorker } from './agents/run-worker.js';
-import {
-  disposeCodexAppServers,
-  snapshotCodexAppServers,
-} from './agents/codex-app-server-adapter.js';
+import { snapshotCodexAppServers } from './agents/codex-app-server-adapter.js';
 import { projectsService } from './config/projects-service.js';
 import { warmUpAllProjects } from './routes/_helpers.js';
 import { registerStaticDocs } from './static-docs.js';
@@ -215,7 +212,6 @@ async function main() {
     const onShutdown = () => {
       app.log.info('shutting down...');
       stopRunWorker();
-      disposeCodexAppServers();
       closeAuthDb();
       closeAllDbs();
       app.close().then(() => process.exit(0));

@@ -8,7 +8,6 @@ import { projectChannelPath } from '../lib/routes';
 import { useChannelsStore } from '../stores/channels';
 import { useProjectsStore } from '../stores/projects';
 
-type ViewMode = 'list' | 'board';
 type FilterKey = 'all' | ChannelStatus;
 
 const STATUS_BADGE: Record<ChannelStatus, { label: string; bg: string }> = {
@@ -25,7 +24,6 @@ export function ChannelsPage() {
   const channels = useChannelsStore((s) => s.channels);
   const upsertChannel = useChannelsStore((s) => s.upsert);
   const removeChannel = useChannelsStore((s) => s.remove);
-  const [view, setView] = useState<ViewMode>('list');
   const [filter, setFilter] = useState<FilterKey>('all');
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
@@ -80,36 +78,19 @@ export function ChannelsPage() {
             {project.display_name ?? project.name} · {projectChannels.length} total
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setView((next) => (next === 'list' ? 'board' : 'list'))}
-          className="px-3 py-1.5 text-xs font-bold border-2 border-black rounded bg-bg-card hover:bg-accent-yellow"
-          title="Switch channel view"
-        >
-          {view === 'list' ? 'Task style' : 'List style'}
-        </button>
       </header>
 
-      {view === 'board' ? (
-        <TaskStyleChannels
-          projectName={projectName}
-          channels={projectChannels}
-          counts={counts}
-          filter={filter}
-          onFilter={setFilter}
-          onStatus={updateStatus}
-          onDelete={remove}
-          draggingId={draggingId}
-          onDraggingId={setDraggingId}
-        />
-      ) : (
-        <ListStyleChannels
-          projectName={projectName}
-          channels={projectChannels}
-          onStatus={updateStatus}
-          onDelete={remove}
-        />
-      )}
+      <TaskStyleChannels
+        projectName={projectName}
+        channels={projectChannels}
+        counts={counts}
+        filter={filter}
+        onFilter={setFilter}
+        onStatus={updateStatus}
+        onDelete={remove}
+        draggingId={draggingId}
+        onDraggingId={setDraggingId}
+      />
     </div>
   );
 }
@@ -263,36 +244,6 @@ function StatusColumn({
         )}
       </div>
     </section>
-  );
-}
-
-function ListStyleChannels({
-  projectName,
-  channels,
-  onStatus,
-  onDelete,
-}: {
-  projectName: string;
-  channels: Channel[];
-  onStatus: (channel: Channel, status: ChannelStatus) => Promise<void>;
-  onDelete: (channel: Channel) => Promise<void>;
-}) {
-  return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-2">
-      {channels.length === 0 ? (
-        <div className="text-text-secondary font-mono text-sm py-4">No channels yet.</div>
-      ) : (
-        channels.map((channel) => (
-          <ChannelRow
-            key={channel.id}
-            projectName={projectName}
-            channel={channel}
-            onStatus={onStatus}
-            onDelete={onDelete}
-          />
-        ))
-      )}
-    </div>
   );
 }
 

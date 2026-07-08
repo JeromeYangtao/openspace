@@ -35,7 +35,6 @@ import { ChannelPage } from './pages/ChannelPage';
 import { DMPage } from './pages/DMPage';
 import { UserDMPage } from './pages/UserDMPage';
 import { GlobalThreadsPage } from './pages/GlobalThreadsPage';
-import { GlobalTasksPage } from './pages/GlobalTasksPage';
 import { InboxPage } from './pages/InboxPage';
 import { IntelligencePage } from './pages/IntelligencePage';
 import { SavedPage } from './pages/SavedPage';
@@ -129,7 +128,6 @@ function AuthenticatedApp() {
 
           {/* 全局视图（跨 Project） */}
           <Route path="/threads" element={<GlobalThreadsPage />} />
-          <Route path="/tasks" element={<GlobalTasksPage />} />
           <Route path="/saved" element={<SavedPage />} />
           <Route path="/inbox" element={<InboxPage />} />
           <Route path="/settings" element={<SettingsPage />} />

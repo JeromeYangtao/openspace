@@ -15,12 +15,6 @@ export function canManageChannel(db: Database, channelId: string, user: AuthUser
   return userChannelRepo.hasUser(db, channelId, user.id);
 }
 
-export function visibleChannelsForUser(db: Database, user: AuthUser) {
-  const channels = channelRepo.list(db);
-  if (user.role === 'admin') return channels;
-  return channels.filter(
-    (channel) =>
-      (channel.name === 'general' && channel.type === 'channel') ||
-      userChannelRepo.hasUser(db, channel.id, user.id),
-  );
+export function visibleChannelsForUser(db: Database, _user: AuthUser) {
+  return channelRepo.list(db);
 }

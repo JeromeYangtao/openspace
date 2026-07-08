@@ -17,14 +17,7 @@
  */
 
 import { useEffect } from 'react';
-import {
-  BrowserRouter,
-  Navigate,
-  Outlet,
-  Route,
-  Routes,
-  useParams,
-} from 'react-router-dom';
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom';
 import { useChannelsStore } from './stores/channels';
 import { useAgentsStore } from './stores/agents';
 import { useApprovalsStore } from './stores/approvals';
@@ -37,6 +30,7 @@ import { Layout } from './components/Layout';
 import { WelcomePage } from './pages/WelcomePage';
 import { ProjectIndexPage } from './pages/ProjectIndexPage';
 import { ProjectSettingsPage } from './pages/ProjectSettingsPage';
+import { ChannelsPage } from './pages/ChannelsPage';
 import { ChannelPage } from './pages/ChannelPage';
 import { DMPage } from './pages/DMPage';
 import { UserDMPage } from './pages/UserDMPage';
@@ -123,6 +117,7 @@ function AuthenticatedApp() {
           {/* Project scope */}
           <Route path="/p/:projectName" element={<ProjectScope />}>
             <Route index element={<ProjectIndexPage />} />
+            <Route path="channels" element={<ChannelsPage />} />
             <Route path="channel/:channelId" element={<ChannelPage />} />
             <Route path="dm/:agentId" element={<DMPage />} />
             <Route path="user-dm/:userId" element={<UserDMPage />} />

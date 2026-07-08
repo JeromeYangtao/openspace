@@ -1,11 +1,8 @@
 import type { FastifyInstance } from 'fastify';
+import type { ChannelStatus } from '@openspace/shared';
 import { channelRepo, agentRepo, messageRepo, userChannelRepo } from '../db/repos.js';
 import { abortChannelAgentRuns } from '../agents/engine.js';
-import {
-  dbForProjectId,
-  dbForResource,
-  forEachProjectDb,
-} from './_helpers.js';
+import { dbForProjectId, dbForResource, forEachProjectDb } from './_helpers.js';
 import { getUserFromRequest, listEnabledUsersByIds } from '../auth/session.js';
 import { openAuthDb } from '../auth/db.js';
 import {
@@ -38,6 +35,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       name: string;
       description?: string | null;
       type?: 'channel' | 'dm';
+      status?: ChannelStatus;
       project_id?: string | null;
     };
     if (!body?.name) {
@@ -63,6 +61,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       name: body.name,
       description: body.description ?? null,
       type: body.type ?? 'channel',
+      status: body.status,
     });
     if (channel.type === 'channel') {
       userChannelRepo.addToChannel(ctx.db, channel.id, user.id);
@@ -141,7 +140,11 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       reply.code(403);
       return { error: 'forbidden' };
     }
-    const body = req.body as { name?: string; description?: string | null };
+    const body = req.body as {
+      name?: string;
+      description?: string | null;
+      status?: ChannelStatus;
+    };
     const ch = channelRepo.update(ctx.db, id, body ?? {});
     if (!ch) {
       reply.code(404);

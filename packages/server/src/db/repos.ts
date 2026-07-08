@@ -21,6 +21,7 @@ import type {
   AgentSkill,
   ActivityType,
   Channel,
+  ChannelStatus,
   ChatMessage,
   Decision,
   Lesson,
@@ -40,12 +41,7 @@ import type {
   WorkflowSessionStatus,
   WorkflowSource,
 } from '@openspace/shared';
-import type {
-  ReasoningEffort,
-  Runtime,
-  SenderType,
-  TaskStatus,
-} from '@openspace/shared';
+import type { ReasoningEffort, Runtime, SenderType, TaskStatus } from '@openspace/shared';
 import { ACTIVITY_RETENTION_PER_AGENT } from '@openspace/shared';
 
 const now = (): number => Date.now();
@@ -70,6 +66,7 @@ interface ChannelRow {
   name: string;
   description: string | null;
   type: 'channel' | 'dm';
+  status: ChannelStatus;
   created_at: number;
 }
 
@@ -79,6 +76,7 @@ function rowToChannel(r: ChannelRow): Channel {
     name: r.name,
     description: r.description,
     type: r.type,
+    status: r.status,
     project_id: null, // D-21：per-project db 内本来只有一个 project，project_id 由 server 注入
     created_at: r.created_at,
   };
@@ -86,8 +84,9 @@ function rowToChannel(r: ChannelRow): Channel {
 
 export const channelRepo = {
   list(db: Database): Channel[] {
-    return (db.prepare('SELECT * FROM channels ORDER BY created_at ASC').all() as ChannelRow[])
-      .map(rowToChannel);
+    return (db.prepare('SELECT * FROM channels ORDER BY created_at ASC').all() as ChannelRow[]).map(
+      rowToChannel,
+    );
   },
 
   getById(db: Database, id: string): Channel | null {
@@ -102,18 +101,21 @@ export const channelRepo = {
       name: string;
       description?: string | null;
       type: 'channel' | 'dm';
+      status?: ChannelStatus;
     },
   ): Channel {
     const id = input.id ?? nanoid();
     const ts = now();
+    const status = input.status ?? 'active';
     db.prepare(
-      'INSERT INTO channels (id, name, description, type, created_at) VALUES (?, ?, ?, ?, ?)',
-    ).run(id, input.name, input.description ?? null, input.type, ts);
+      'INSERT INTO channels (id, name, description, type, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(id, input.name, input.description ?? null, input.type, status, ts);
     return {
       id,
       name: input.name,
       description: input.description ?? null,
       type: input.type,
+      status,
       project_id: null,
       created_at: ts,
     };
@@ -122,7 +124,7 @@ export const channelRepo = {
   update(
     db: Database,
     id: string,
-    patch: { name?: string; description?: string | null },
+    patch: { name?: string; description?: string | null; status?: ChannelStatus },
   ): Channel | null {
     const fields: string[] = [];
     const values: unknown[] = [];
@@ -133,6 +135,10 @@ export const channelRepo = {
     if (patch.description !== undefined) {
       fields.push('description = ?');
       values.push(patch.description);
+    }
+    if (patch.status !== undefined) {
+      fields.push('status = ?');
+      values.push(patch.status);
     }
     if (!fields.length) return this.getById(db, id);
     values.push(id);
@@ -175,9 +181,10 @@ export const userChannelRepo = {
   },
 
   addToChannel(db: Database, channelId: string, userId: string): void {
-    db.prepare(
-      'INSERT OR IGNORE INTO channel_users (channel_id, user_id) VALUES (?, ?)',
-    ).run(channelId, userId);
+    db.prepare('INSERT OR IGNORE INTO channel_users (channel_id, user_id) VALUES (?, ?)').run(
+      channelId,
+      userId,
+    );
   },
 
   hasUser(db: Database, channelId: string, userId: string): boolean {
@@ -238,8 +245,9 @@ function rowToAgent(r: AgentRow): Agent {
 
 export const agentRepo = {
   list(db: Database): Agent[] {
-    return (db.prepare('SELECT * FROM agents ORDER BY created_at ASC').all() as AgentRow[])
-      .map(rowToAgent);
+    return (db.prepare('SELECT * FROM agents ORDER BY created_at ASC').all() as AgentRow[]).map(
+      rowToAgent,
+    );
   },
 
   getById(db: Database, id: string): Agent | null {
@@ -271,11 +279,7 @@ export const agentRepo = {
     const id = input.id ?? nanoid();
     const ts = now();
     const thinkingInt =
-      input.thinking === undefined || input.thinking === null
-        ? null
-        : input.thinking
-          ? 1
-          : 0;
+      input.thinking === undefined || input.thinking === null ? null : input.thinking ? 1 : 0;
     db.prepare(
       `INSERT INTO agents (id, name, role, avatar, description, runtime, model, reasoning, thinking, context, env_vars_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -310,11 +314,7 @@ export const agentRepo = {
     };
   },
 
-  update(
-    db: Database,
-    id: string,
-    patch: Partial<Omit<Agent, 'id' | 'created_at'>>,
-  ): Agent | null {
+  update(db: Database, id: string, patch: Partial<Omit<Agent, 'id' | 'created_at'>>): Agent | null {
     const fields: string[] = [];
     const values: unknown[] = [];
     if (patch.name !== undefined) {
@@ -383,9 +383,10 @@ export const agentRepo = {
   },
 
   addToChannel(db: Database, channelId: string, agentId: string): void {
-    db.prepare(
-      'INSERT OR IGNORE INTO channel_agents (channel_id, agent_id) VALUES (?, ?)',
-    ).run(channelId, agentId);
+    db.prepare('INSERT OR IGNORE INTO channel_agents (channel_id, agent_id) VALUES (?, ?)').run(
+      channelId,
+      agentId,
+    );
   },
 
   removeFromChannel(db: Database, channelId: string, agentId: string): void {
@@ -447,12 +448,7 @@ function compactMessageMetadata(metadata: MessageMetadata | null): MessageMetada
 
 export const messageRepo = {
   /** 查询频道主线消息（parent_id IS NULL），按时间倒序 */
-  listChannelMain(
-    db: Database,
-    channelId: string,
-    limit = 50,
-    before?: string,
-  ): ChatMessage[] {
+  listChannelMain(db: Database, channelId: string, limit = 50, before?: string): ChatMessage[] {
     const rows = before
       ? (db
           .prepare(
@@ -474,9 +470,9 @@ export const messageRepo = {
 
   /** 查询 Thread 内所有消息（包括根消息），按时间正序 */
   listThread(db: Database, rootMessageId: string): ChatMessage[] {
-    const root = db
-      .prepare('SELECT * FROM messages WHERE id = ?')
-      .get(rootMessageId) as MessageRow | undefined;
+    const root = db.prepare('SELECT * FROM messages WHERE id = ?').get(rootMessageId) as
+      | MessageRow
+      | undefined;
     if (!root) return [];
     const replies = db
       .prepare('SELECT * FROM messages WHERE parent_id = ? ORDER BY created_at ASC')
@@ -571,11 +567,7 @@ export const messageRepo = {
   ): void {
     db.prepare('UPDATE messages SET content = ?, metadata_json = ? WHERE id = ?').run(
       content,
-      metadata !== undefined
-        ? metadata === null
-          ? null
-          : JSON.stringify(metadata)
-        : undefined,
+      metadata !== undefined ? (metadata === null ? null : JSON.stringify(metadata)) : undefined,
       id,
     );
   },
@@ -612,10 +604,7 @@ function rowToTask(r: TaskRow): Task {
 }
 
 export const taskRepo = {
-  list(
-    db: Database,
-    filter: { channel_id?: string; status?: TaskStatus } = {},
-  ): Task[] {
+  list(db: Database, filter: { channel_id?: string; status?: TaskStatus } = {}): Task[] {
     const where: string[] = [];
     const params: unknown[] = [];
     if (filter.channel_id) {
@@ -775,13 +764,7 @@ export const activityRepo = {
       .prepare(
         'INSERT INTO agent_activity (agent_id, channel_id, type, detail, created_at) VALUES (?, ?, ?, ?, ?)',
       )
-      .run(
-        input.agent_id,
-        input.channel_id ?? null,
-        input.type,
-        input.detail ?? null,
-        ts,
-      );
+      .run(input.agent_id, input.channel_id ?? null, input.type, input.detail ?? null, ts);
     const id = Number(result.lastInsertRowid);
 
     // 保留策略（D-3）：超过 500 条删除最旧（全 channel 合并）
@@ -840,9 +823,9 @@ function rowToAgentRun(r: AgentRunRow): AgentRun {
 
 export const agentRunRepo = {
   getById(db: Database, id: number): AgentRun | null {
-    const row = db
-      .prepare('SELECT * FROM agent_runs WHERE id = ?')
-      .get(id) as AgentRunRow | undefined;
+    const row = db.prepare('SELECT * FROM agent_runs WHERE id = ?').get(id) as
+      | AgentRunRow
+      | undefined;
     return row ? rowToAgentRun(row) : null;
   },
 
@@ -901,9 +884,11 @@ export const agentRunRepo = {
   /** 结束一个 run（设置 ended_at） */
   end(db: Database, id: number, errorMsg?: string | null): void {
     const ts = now();
-    db.prepare(
-      'UPDATE agent_runs SET ended_at = ?, error_msg = ? WHERE id = ?',
-    ).run(ts, errorMsg ?? null, id);
+    db.prepare('UPDATE agent_runs SET ended_at = ?, error_msg = ? WHERE id = ?').run(
+      ts,
+      errorMsg ?? null,
+      id,
+    );
   },
 
   /** 标记 run 为 stopped 并结束。用于用户 stop 或服务重启恢复。 */
@@ -1159,9 +1144,7 @@ export const runtimeSessionRepo = {
         `SELECT session_id FROM runtime_sessions
          WHERE runtime = ? AND agent_id = ? AND channel_id = ?`,
       )
-      .get(input.runtime, input.agent_id, input.channel_id) as
-      | { session_id: string }
-      | undefined;
+      .get(input.runtime, input.agent_id, input.channel_id) as { session_id: string } | undefined;
     return row?.session_id ?? null;
   },
 
@@ -1212,8 +1195,9 @@ function rowToWorkflow(r: WorkflowRow): Workflow {
 
 export const workflowRepo = {
   list(db: Database): Workflow[] {
-    return (db.prepare('SELECT * FROM workflows ORDER BY created_at ASC').all() as WorkflowRow[])
-      .map(rowToWorkflow);
+    return (
+      db.prepare('SELECT * FROM workflows ORDER BY created_at ASC').all() as WorkflowRow[]
+    ).map(rowToWorkflow);
   },
 
   getById(db: Database, id: string): Workflow | null {
@@ -1345,18 +1329,14 @@ export const workflowRunRepo = {
 
   listByWorkflow(db: Database, workflowId: string, limit = 50): WorkflowRun[] {
     const rows = db
-      .prepare(
-        'SELECT * FROM workflow_runs WHERE workflow_id = ? ORDER BY started_at DESC LIMIT ?',
-      )
+      .prepare('SELECT * FROM workflow_runs WHERE workflow_id = ? ORDER BY started_at DESC LIMIT ?')
       .all(workflowId, limit) as WorkflowRunRow[];
     return rows.map(rowToWorkflowRun);
   },
 
   listByChannel(db: Database, channelId: string, limit = 50): WorkflowRun[] {
     const rows = db
-      .prepare(
-        'SELECT * FROM workflow_runs WHERE channel_id = ? ORDER BY started_at DESC LIMIT ?',
-      )
+      .prepare('SELECT * FROM workflow_runs WHERE channel_id = ? ORDER BY started_at DESC LIMIT ?')
       .all(channelId, limit) as WorkflowRunRow[];
     return rows.map(rowToWorkflowRun);
   },
@@ -1365,9 +1345,7 @@ export const workflowRunRepo = {
   listActive(db: Database, opts?: { status?: WorkflowRunStatus }): WorkflowRun[] {
     if (opts?.status) {
       const rows = db
-        .prepare(
-          'SELECT * FROM workflow_runs WHERE status = ? ORDER BY started_at DESC',
-        )
+        .prepare('SELECT * FROM workflow_runs WHERE status = ? ORDER BY started_at DESC')
         .all(opts.status) as WorkflowRunRow[];
       return rows.map(rowToWorkflowRun);
     }
@@ -1382,11 +1360,7 @@ export const workflowRunRepo = {
   },
 
   /** 找 channel 当前活跃 run（running / awaiting_approval），可选按 thread 过滤 */
-  getActive(
-    db: Database,
-    channelId: string,
-    threadId?: string | null,
-  ): WorkflowRun | null {
+  getActive(db: Database, channelId: string, threadId?: string | null): WorkflowRun | null {
     const sql = threadId
       ? `SELECT * FROM workflow_runs
          WHERE channel_id = ? AND thread_id = ?
@@ -1396,9 +1370,7 @@ export const workflowRunRepo = {
          WHERE channel_id = ? AND status IN ('running','awaiting_approval')
          ORDER BY started_at DESC LIMIT 1`;
     const row = (
-      threadId
-        ? db.prepare(sql).get(channelId, threadId)
-        : db.prepare(sql).get(channelId)
+      threadId ? db.prepare(sql).get(channelId, threadId) : db.prepare(sql).get(channelId)
     ) as WorkflowRunRow | undefined;
     return row ? rowToWorkflowRun(row) : null;
   },
@@ -1505,18 +1477,14 @@ function rowToResponsibility(r: ResponsibilityRow): Responsibility {
 export const responsibilityRepo = {
   listByWorkflow(db: Database, workflowId: string): Responsibility[] {
     const rows = db
-      .prepare(
-        'SELECT * FROM responsibilities WHERE workflow_id = ? ORDER BY id ASC',
-      )
+      .prepare('SELECT * FROM responsibilities WHERE workflow_id = ? ORDER BY id ASC')
       .all(workflowId) as ResponsibilityRow[];
     return rows.map(rowToResponsibility);
   },
 
   listByAgent(db: Database, agentId: string): Responsibility[] {
     const rows = db
-      .prepare(
-        'SELECT * FROM responsibilities WHERE agent_id = ? ORDER BY workflow_id, step_id',
-      )
+      .prepare('SELECT * FROM responsibilities WHERE agent_id = ? ORDER BY workflow_id, step_id')
       .all(agentId) as ResponsibilityRow[];
     return rows.map(rowToResponsibility);
   },
@@ -1591,10 +1559,7 @@ function rowToDecision(r: DecisionRow): Decision {
 }
 
 export const decisionRepo = {
-  list(
-    db: Database,
-    opts?: { review_status?: ReviewStatus; limit?: number },
-  ): Decision[] {
+  list(db: Database, opts?: { review_status?: ReviewStatus; limit?: number }): Decision[] {
     const where: string[] = [];
     const params: unknown[] = [];
     if (opts?.review_status) {
@@ -1767,11 +1732,7 @@ export const lessonRepo = {
   },
 
   /** ContextBuilder 用：取已审批且 audience 匹配的最近 N 条 */
-  listForInjection(
-    db: Database,
-    audiences: string[],
-    limit = 20,
-  ): Lesson[] {
+  listForInjection(db: Database, audiences: string[], limit = 20): Lesson[] {
     if (audiences.length === 0) return [];
     const placeholders = audiences.map(() => '?').join(',');
     const rows = db
@@ -1787,9 +1748,7 @@ export const lessonRepo = {
   },
 
   getById(db: Database, id: number): Lesson | null {
-    const row = db.prepare('SELECT * FROM lessons WHERE id = ?').get(id) as
-      | LessonRow
-      | undefined;
+    const row = db.prepare('SELECT * FROM lessons WHERE id = ?').get(id) as LessonRow | undefined;
     return row ? rowToLesson(row) : null;
   },
 
@@ -1876,9 +1835,9 @@ export const lessonRepo = {
   bumpUseCount(db: Database, ids: number[]): void {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
-    db.prepare(
-      `UPDATE lessons SET use_count = use_count + 1 WHERE id IN (${placeholders})`,
-    ).run(...ids);
+    db.prepare(`UPDATE lessons SET use_count = use_count + 1 WHERE id IN (${placeholders})`).run(
+      ...ids,
+    );
   },
 
   remove(db: Database, id: number): void {
@@ -2045,9 +2004,7 @@ function rowToFeedback(r: FeedbackRow): AgentFeedback {
 export const feedbackRepo = {
   listByAgent(db: Database, agentId: string): AgentFeedback[] {
     const rows = db
-      .prepare(
-        'SELECT * FROM agent_feedback WHERE agent_id = ? ORDER BY created_at DESC',
-      )
+      .prepare('SELECT * FROM agent_feedback WHERE agent_id = ? ORDER BY created_at DESC')
       .all(agentId) as FeedbackRow[];
     return rows.map(rowToFeedback);
   },
@@ -2155,9 +2112,9 @@ function rowToOnboarding(r: OnboardingRow): ProjectOnboarding {
 export const onboardingRepo = {
   /** D-21：per-project db 内 project_onboarding 是 singleton（id=1） */
   get(db: Database): ProjectOnboarding | null {
-    const row = db
-      .prepare('SELECT * FROM project_onboarding WHERE id = 1')
-      .get() as OnboardingRow | undefined;
+    const row = db.prepare('SELECT * FROM project_onboarding WHERE id = 1').get() as
+      | OnboardingRow
+      | undefined;
     return row ? rowToOnboarding(row) : null;
   },
 
@@ -2320,16 +2277,13 @@ export const workflowSessionRepo = {
   },
 
   getById(db: Database, id: number): WorkflowSession | null {
-    const row = db
-      .prepare('SELECT * FROM workflow_sessions WHERE id = ?')
-      .get(id) as SessionRow | undefined;
+    const row = db.prepare('SELECT * FROM workflow_sessions WHERE id = ?').get(id) as
+      | SessionRow
+      | undefined;
     return row ? rowToSession(row) : null;
   },
 
-  create(
-    db: Database,
-    input: { goal_input: string; started_by: string },
-  ): WorkflowSession {
+  create(db: Database, input: { goal_input: string; started_by: string }): WorkflowSession {
     const ts = now();
     const result = db
       .prepare(

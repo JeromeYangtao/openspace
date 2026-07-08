@@ -10,6 +10,7 @@ import type {
   AgentRun,
   AgentSkill,
   ChatMessage,
+  ChannelStatus,
   Channel,
   CursorBackendStatus,
   CursorBackendUpdateInput,
@@ -199,12 +200,23 @@ export const createChannel = (data: {
   name: string;
   description?: string;
   type?: 'channel' | 'dm';
+  status?: ChannelStatus;
   project_id?: string;
 }) =>
   request<Channel>('/api/channels', {
     method: 'POST',
     body: JSON.stringify(data),
   });
+export const updateChannel = (
+  id: string,
+  patch: { name?: string; description?: string | null; status?: ChannelStatus },
+) =>
+  request<Channel>(`/api/channels/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+export const deleteChannel = (id: string) =>
+  request<void>(`/api/channels/${id}`, { method: 'DELETE' });
 export const getChannelMessages = (
   id: string,
   opts?: { parent_id?: string; limit?: number; before?: string },

@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS channels (
   name            TEXT NOT NULL,
   description     TEXT,
   type            TEXT NOT NULL CHECK(type IN ('channel','dm')),
+  status          TEXT NOT NULL DEFAULT 'active'
+                  CHECK(status IN ('pending','active','review','done','cancel')),
   created_at      INTEGER NOT NULL
 );
 

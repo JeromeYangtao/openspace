@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import type { Channel, ChannelStatus } from '@openspace/shared';
 import { CHANNEL_STATUSES } from '@openspace/shared';
@@ -82,6 +82,7 @@ export function ChannelsPage() {
           <ChannelInfoDrawer
             projectName={projectName}
             channel={selectedChannel}
+            onUpdated={upsertChannel}
             onClose={() => setSelectedChannelId(null)}
           />
         )}
@@ -294,13 +295,39 @@ function ChannelRow({
 function ChannelInfoDrawer({
   projectName,
   channel,
+  onUpdated,
   onClose,
 }: {
   projectName: string;
   channel: Channel;
+  onUpdated: (channel: Channel) => void;
   onClose: () => void;
 }) {
   const badge = STATUS_BADGE[channel.status];
+  const [name, setName] = useState(channel.name);
+  const [description, setDescription] = useState(channel.description ?? '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setName(channel.name);
+    setDescription(channel.description ?? '');
+  }, [channel.id, channel.name, channel.description]);
+
+  const dirty = name.trim() !== channel.name || description.trim() !== (channel.description ?? '');
+
+  const save = async () => {
+    if (!name.trim() || saving) return;
+    setSaving(true);
+    try {
+      const updated = await updateChannel(channel.id, {
+        name: name.trim(),
+        description: description.trim() || null,
+      });
+      onUpdated(updated);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <aside className="w-96 border-l-2 border-black bg-bg-main flex flex-col h-full min-w-0">
@@ -364,17 +391,42 @@ function ChannelInfoDrawer({
           </span>
         </div>
 
-        <InfoBlock label="NAME" value={`# ${channel.name}`} />
+        <div>
+          <div className="section-header mb-1">NAME</div>
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="w-full px-2 py-1.5 border-2 border-black rounded bg-bg-card text-sm focus:outline-none focus:ring-2 focus:ring-accent-pink"
+          />
+        </div>
         <InfoBlock label="TYPE" value={channel.type} />
         <InfoBlock label="CREATED" value={new Date(channel.created_at).toLocaleString()} />
 
         <div>
           <div className="section-header mb-2">DESCRIPTION</div>
-          <div className="border-2 border-black rounded bg-bg-card p-3 text-sm whitespace-pre-wrap min-h-20">
-            {channel.description || (
-              <span className="text-text-secondary font-mono text-xs">No description</span>
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            rows={5}
+            className="w-full border-2 border-black rounded bg-bg-card p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent-pink"
+            placeholder="No description"
+          />
+        </div>
+
+        <div className="pt-3 border-t-2 border-black/20">
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={!dirty || !name.trim() || saving}
+            className={cn(
+              'w-full px-3 py-2 border-2 border-black rounded font-bold text-sm',
+              !dirty || !name.trim() || saving
+                ? 'bg-bg-card opacity-50 cursor-not-allowed'
+                : 'bg-accent-pink hover:brightness-105',
             )}
-          </div>
+          >
+            {saving ? 'Saving...' : 'Save changes'}
+          </button>
         </div>
       </div>
     </aside>

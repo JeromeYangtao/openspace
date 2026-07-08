@@ -21,6 +21,7 @@
  *   - v3: agent_runs 增加 run manager 心跳字段
  *   - v4: agent_run_jobs 队列表 + runtime_sessions
  *   - v5: channel_users 用户频道成员表
+ *   - v6: channels.status 生命周期字段
  */
 
 import Database from 'better-sqlite3';
@@ -37,7 +38,7 @@ const SCHEMA_CANDIDATES = [
 ];
 const SCHEMA_PATH = SCHEMA_CANDIDATES.find((p) => existsSync(p));
 
-const PER_PROJECT_SCHEMA_VERSION = '5';
+const PER_PROJECT_SCHEMA_VERSION = '6';
 const POOL_MAX = 20;
 const IDLE_CLOSE_MS = 30 * 60 * 1000; // 30 min
 
@@ -77,9 +78,7 @@ export function openProjectDb(workspacePath: string): DB {
   const schemaSql = readFileSync(SCHEMA_PATH, 'utf-8');
   db.exec(schemaSql);
 
-  const stmt = db.prepare<[string], { value: string }>(
-    'SELECT value FROM meta WHERE key = ?',
-  );
+  const stmt = db.prepare<[string], { value: string }>('SELECT value FROM meta WHERE key = ?');
   const row = stmt.get('schema_version');
   // 用 fromVersion='0' 兜底 fresh db（meta 表里还没记录）；fresh db 也要跑 applyMigrations
   // 以确保依赖新列的 INDEX 被创建（这些 INDEX 不能直接放 schema.sql，否则老 db 升级时会因
@@ -133,7 +132,16 @@ export function listOpenDbs(): Array<{ workspacePath: string; db: DB }> {
  * 限制：必须 db 已打开。建议 server 启动期 warm-up 所有 recent projects。
  */
 export function findDbByResource(
-  table: 'channels' | 'agents' | 'agent_runs' | 'workflows' | 'messages' | 'tasks' | 'workflow_runs' | 'agent_observations' | 'agent_feedback',
+  table:
+    | 'channels'
+    | 'agents'
+    | 'agent_runs'
+    | 'workflows'
+    | 'messages'
+    | 'tasks'
+    | 'workflow_runs'
+    | 'agent_observations'
+    | 'agent_feedback',
   id: string | number,
 ): { workspacePath: string; db: DB } | null {
   for (const entry of pool.values()) {
@@ -183,9 +191,7 @@ function applyMigrations(db: DB, fromVersion: string, toVersion: string): void {
       }
     }
     // 索引创建幂等（IF NOT EXISTS），fresh db / 老 db 都跑一次确保索引存在
-    db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_agents_role ON agents(role) WHERE role IS NOT NULL;',
-    );
+    db.exec('CREATE INDEX IF NOT EXISTS idx_agents_role ON agents(role) WHERE role IS NOT NULL;');
   }
   // v2 → v3 / fresh → v3: agent_runs 增加后台控制层字段
   if (fromVersion === '2' || fromVersion === '1' || fromVersion === '0') {
@@ -246,15 +252,26 @@ function applyMigrations(db: DB, fromVersion: string, toVersion: string): void {
       CREATE INDEX IF NOT EXISTS idx_channel_users_user ON channel_users(user_id);
     `);
   }
+  // v5 → v6 / fresh → v6: channel 生命周期状态；老数据默认 active。
+  if (
+    fromVersion === '5' ||
+    fromVersion === '4' ||
+    fromVersion === '3' ||
+    fromVersion === '2' ||
+    fromVersion === '1' ||
+    fromVersion === '0'
+  ) {
+    addColumnIfMissing(
+      db,
+      'channels',
+      'status',
+      "TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('pending','active','review','done','cancel'))",
+    );
+  }
   void toVersion;
 }
 
-function addColumnIfMissing(
-  db: DB,
-  table: string,
-  column: string,
-  definition: string,
-): void {
+function addColumnIfMissing(db: DB, table: string, column: string, definition: string): void {
   try {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
   } catch (e) {

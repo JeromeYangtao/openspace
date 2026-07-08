@@ -9,6 +9,7 @@
 
 import type {
   ContextSize,
+  ChannelStatus,
   ReasoningEffort,
   Runtime,
   SenderType,
@@ -49,6 +50,7 @@ export interface Channel {
   name: string;
   description: string | null;
   type: 'channel' | 'dm';
+  status: ChannelStatus;
   /**
    * v1.0 新增：归属 Project（D-2）。
    * v1.0.1 过渡期：旧 db 行可能为 null，Sprint 1 Checkpoint 2 将强制 NOT NULL。
@@ -481,10 +483,7 @@ export interface Lesson {
 // =============================================================================
 
 export type ResponsibilityRole = 'executor' | 'approver' | 'reviewer' | 'informed';
-export type ResponsibilityAuthority =
-  | 'must_approve'
-  | 'optional_approve'
-  | 'no_authority';
+export type ResponsibilityAuthority = 'must_approve' | 'optional_approve' | 'no_authority';
 
 /**
  * Workflow × Step × Agent 的责任连接（简化 RACI）。

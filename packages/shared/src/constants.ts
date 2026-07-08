@@ -92,6 +92,12 @@ export const RUNTIME_REGISTRY: RuntimeMeta[] = [
 ];
 
 // =============================================================================
+// Channel 状态
+// =============================================================================
+export const CHANNEL_STATUSES = ['pending', 'active', 'review', 'done', 'cancel'] as const;
+export type ChannelStatus = (typeof CHANNEL_STATUSES)[number];
+
+// =============================================================================
 // Agent 状态（D-1）
 // =============================================================================
 export const AGENT_STATES = ['idle', 'thinking', 'working', 'error', 'stopped'] as const;

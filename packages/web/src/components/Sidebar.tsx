@@ -19,6 +19,7 @@ import { useProjectsStore } from '../stores/projects';
 import { useUsersStore } from '../stores/users';
 import {
   projectAgentProfilePath,
+  projectChannelsPath,
   projectChannelPath,
   projectDmPath,
   projectUserDmPath,
@@ -222,7 +223,9 @@ function SectionHeader({
         className="flex min-w-0 items-center gap-1 text-left hover:underline"
         aria-expanded={!collapsed}
       >
-        <span className="section-header">{collapsed ? '▶' : '▼'} {label}</span>
+        <span className="section-header">
+          {collapsed ? '▶' : '▼'} {label}
+        </span>
         {typeof count === 'number' && (
           <span className="text-[11px] font-mono text-text-secondary">{count}</span>
         )}
@@ -327,6 +330,14 @@ function ChatTabContent({
           }}
         />
         <ToolLink icon={<TaskIcon />} label="Tasks" to="/tasks" onNavigate={onNavigate} />
+        {projectName && (
+          <ToolLink
+            icon={<span className="font-bold">#</span>}
+            label="Channels"
+            to={projectChannelsPath(projectName)}
+            onNavigate={onNavigate}
+          />
+        )}
       </div>
 
       {/* CHANNELS */}
@@ -462,9 +473,7 @@ function MembersTabContent({
           );
         })}
       {!collapsed.users && users.length === 0 && (
-        <div className="px-3 py-2 text-xs text-text-secondary font-mono">
-          No users loaded.
-        </div>
+        <div className="px-3 py-2 text-xs text-text-secondary font-mono">No users loaded.</div>
       )}
 
       <SectionHeader

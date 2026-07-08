@@ -26,6 +26,10 @@ export function projectChannelPath(projectName: string, channelId: string): stri
   return `/p/${projectName}/channel/${channelId}`;
 }
 
+export function projectChannelsPath(projectName: string): string {
+  return `/p/${projectName}/channels`;
+}
+
 export function projectDmPath(projectName: string, agentId: string): string {
   return `/p/${projectName}/dm/${agentId}`;
 }

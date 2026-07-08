@@ -26,6 +26,7 @@ export function ChannelsPage() {
   const removeChannel = useChannelsStore((s) => s.remove);
   const [filter, setFilter] = useState<FilterKey>('all');
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
 
   const project = useMemo(
     () => projects.find((p) => p.name === projectName) ?? null,
@@ -53,6 +54,11 @@ export function ChannelsPage() {
     return next;
   }, [projectChannels]);
 
+  const selectedChannel = useMemo(
+    () => projectChannels.find((channel) => channel.id === selectedChannelId) ?? null,
+    [projectChannels, selectedChannelId],
+  );
+
   if (!project || !projectName) return <Navigate to="/" replace />;
 
   const updateStatus = async (channel: Channel, status: ChannelStatus) => {
@@ -64,6 +70,7 @@ export function ChannelsPage() {
     if (!confirm(`Delete channel #${channel.name}?`)) return;
     await deleteChannel(channel.id);
     removeChannel(channel.id);
+    if (selectedChannelId === channel.id) setSelectedChannelId(null);
   };
 
   return (
@@ -80,17 +87,28 @@ export function ChannelsPage() {
         </div>
       </header>
 
-      <TaskStyleChannels
-        projectName={projectName}
-        channels={projectChannels}
-        counts={counts}
-        filter={filter}
-        onFilter={setFilter}
-        onStatus={updateStatus}
-        onDelete={remove}
-        draggingId={draggingId}
-        onDraggingId={setDraggingId}
-      />
+      <div className="flex-1 flex min-h-0 min-w-0">
+        <TaskStyleChannels
+          projectName={projectName}
+          channels={projectChannels}
+          counts={counts}
+          filter={filter}
+          onFilter={setFilter}
+          onStatus={updateStatus}
+          onDelete={remove}
+          onSelect={(channel) => setSelectedChannelId(channel.id)}
+          selectedChannelId={selectedChannelId}
+          draggingId={draggingId}
+          onDraggingId={setDraggingId}
+        />
+        {selectedChannel && (
+          <ChannelInfoDrawer
+            projectName={projectName}
+            channel={selectedChannel}
+            onClose={() => setSelectedChannelId(null)}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -103,6 +121,8 @@ function TaskStyleChannels({
   onFilter,
   onStatus,
   onDelete,
+  onSelect,
+  selectedChannelId,
   draggingId,
   onDraggingId,
 }: {
@@ -113,6 +133,8 @@ function TaskStyleChannels({
   onFilter: (filter: FilterKey) => void;
   onStatus: (channel: Channel, status: ChannelStatus) => Promise<void>;
   onDelete: (channel: Channel) => Promise<void>;
+  onSelect: (channel: Channel) => void;
+  selectedChannelId: string | null;
   draggingId: string | null;
   onDraggingId: (id: string | null) => void;
 }) {
@@ -158,6 +180,8 @@ function TaskStyleChannels({
                 onDropChannel={onDropToStatus}
                 onStatus={onStatus}
                 onDelete={onDelete}
+                onSelect={onSelect}
+                selectedChannelId={selectedChannelId}
               />
             );
           })}
@@ -176,6 +200,8 @@ function StatusColumn({
   onDropChannel,
   onStatus,
   onDelete,
+  onSelect,
+  selectedChannelId,
 }: {
   projectName: string;
   status: ChannelStatus;
@@ -185,6 +211,8 @@ function StatusColumn({
   onDropChannel: (status: ChannelStatus, channelId: string) => Promise<void>;
   onStatus: (channel: Channel, status: ChannelStatus) => Promise<void>;
   onDelete: (channel: Channel) => Promise<void>;
+  onSelect: (channel: Channel) => void;
+  selectedChannelId: string | null;
 }) {
   const [over, setOver] = useState(false);
   const badge = STATUS_BADGE[status];
@@ -239,6 +267,8 @@ function StatusColumn({
               }}
               onStatus={onStatus}
               onDelete={onDelete}
+              onSelect={onSelect}
+              selected={selectedChannelId === channel.id}
             />
           ))
         )}
@@ -256,6 +286,8 @@ function ChannelRow({
   onDragEnd,
   onStatus,
   onDelete,
+  onSelect,
+  selected = false,
 }: {
   projectName: string;
   channel: Channel;
@@ -265,6 +297,8 @@ function ChannelRow({
   onDragEnd?: () => void;
   onStatus: (channel: Channel, status: ChannelStatus) => Promise<void>;
   onDelete: (channel: Channel) => Promise<void>;
+  onSelect: (channel: Channel) => void;
+  selected?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const badge = STATUS_BADGE[channel.status];
@@ -305,6 +339,7 @@ function ChannelRow({
         'flex items-center gap-2 p-2 border-2 border-black rounded bg-bg-card',
         draggable && 'cursor-grab active:cursor-grabbing',
         dragging && 'opacity-50',
+        selected && 'bg-accent-pink',
       )}
     >
       <span className="font-mono text-sm text-text-secondary">#</span>
@@ -320,20 +355,40 @@ function ChannelRow({
       >
         {badge.label}
       </button>
-      <Link
-        to={projectChannelPath(projectName, channel.id)}
-        draggable={false}
+      <button
+        type="button"
+        onClick={() => onSelect(channel)}
         className="flex-1 min-w-0 truncate text-sm text-left hover:underline"
-        title={`Open #${channel.name}`}
+        title={`Show #${channel.name} details`}
       >
         {channel.name}
-      </Link>
+      </button>
       {channel.description && (
         <span className="hidden md:block max-w-[45%] truncate font-mono text-xs text-text-secondary">
           {channel.description}
         </span>
       )}
+      <Link
+        to={projectChannelPath(projectName, channel.id)}
+        draggable={false}
+        className="w-6 h-6 flex items-center justify-center border-2 border-black rounded hover:bg-accent-yellow"
+        title="Open channel"
+        aria-label="Open channel"
+      >
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+        >
+          <path d="M7 17L17 7" />
+          <path d="M7 7h10v10" />
+        </svg>
+      </Link>
       <button
+        type="button"
         onClick={() => void remove()}
         disabled={busy}
         className="w-6 h-6 flex items-center justify-center border-2 border-black rounded hover:bg-accent-red"
@@ -352,6 +407,107 @@ function ChannelRow({
           <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
         </svg>
       </button>
+    </div>
+  );
+}
+
+function ChannelInfoDrawer({
+  projectName,
+  channel,
+  onClose,
+}: {
+  projectName: string;
+  channel: Channel;
+  onClose: () => void;
+}) {
+  const badge = STATUS_BADGE[channel.status];
+
+  return (
+    <aside className="w-96 border-l-2 border-black bg-bg-main flex flex-col h-full min-w-0">
+      <header className="border-b-2 border-black bg-bg-card px-3 py-2 flex items-center gap-2">
+        <div className="w-8 h-8 bg-accent-yellow border-2 border-black rounded flex items-center justify-center font-bold">
+          #
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-bold truncate text-sm">{channel.name}</div>
+          <div className="text-[11px] font-mono text-text-secondary truncate">channel</div>
+        </div>
+        <Link
+          to={projectChannelPath(projectName, channel.id)}
+          className="w-7 h-7 flex items-center justify-center border-2 border-black rounded bg-bg-card hover:bg-accent-yellow"
+          title="Open channel"
+          aria-label="Open channel"
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <path d="M7 17L17 7" />
+            <path d="M7 7h10v10" />
+          </svg>
+        </Link>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-7 h-7 flex items-center justify-center border-2 border-black rounded bg-bg-card hover:bg-accent-yellow"
+          title="Close"
+          aria-label="Close"
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div>
+          <div className="section-header mb-2">STATUS</div>
+          <span
+            className={cn(
+              'inline-flex px-2 py-1 border-2 border-black rounded font-mono text-[11px] font-bold',
+              badge.bg,
+            )}
+          >
+            {badge.label}
+          </span>
+        </div>
+
+        <InfoBlock label="NAME" value={`# ${channel.name}`} />
+        <InfoBlock label="TYPE" value={channel.type} />
+        <InfoBlock label="CREATED" value={new Date(channel.created_at).toLocaleString()} />
+
+        <div>
+          <div className="section-header mb-2">DESCRIPTION</div>
+          <div className="border-2 border-black rounded bg-bg-card p-3 text-sm whitespace-pre-wrap min-h-20">
+            {channel.description || (
+              <span className="text-text-secondary font-mono text-xs">No description</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function InfoBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="section-header mb-1">{label}</div>
+      <div className="font-mono text-sm border-2 border-black/20 rounded bg-bg-card px-2 py-1 truncate">
+        {value}
+      </div>
     </div>
   );
 }

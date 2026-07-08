@@ -3,12 +3,10 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import type { Channel, ChannelStatus } from '@openspace/shared';
 import { CHANNEL_STATUSES } from '@openspace/shared';
 import { cn } from '../lib/cn';
-import { deleteChannel, updateChannel } from '../lib/api';
+import { updateChannel } from '../lib/api';
 import { projectChannelPath } from '../lib/routes';
 import { useChannelsStore } from '../stores/channels';
 import { useProjectsStore } from '../stores/projects';
-
-type FilterKey = 'all' | ChannelStatus;
 
 const STATUS_BADGE: Record<ChannelStatus, { label: string; bg: string }> = {
   pending: { label: 'PENDING', bg: 'bg-accent-orange' },
@@ -18,13 +16,15 @@ const STATUS_BADGE: Record<ChannelStatus, { label: string; bg: string }> = {
   cancel: { label: 'CANCEL', bg: 'bg-red-300' },
 };
 
+function isSystemChannel(channel: Channel): boolean {
+  return channel.id === 'general' || channel.name === 'general';
+}
+
 export function ChannelsPage() {
   const { projectName } = useParams<{ projectName: string }>();
   const projects = useProjectsStore((s) => s.projects);
   const channels = useChannelsStore((s) => s.channels);
   const upsertChannel = useChannelsStore((s) => s.upsert);
-  const removeChannel = useChannelsStore((s) => s.remove);
-  const [filter, setFilter] = useState<FilterKey>('all');
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
 
@@ -37,22 +37,10 @@ export function ChannelsPage() {
     if (!project) return [];
     return channels
       .filter((c) => c.type === 'channel')
+      .filter((c) => !isSystemChannel(c))
       .filter((c) => c.project_id === project.id || !c.project_id)
       .sort((a, b) => a.created_at - b.created_at);
   }, [channels, project]);
-
-  const counts = useMemo(() => {
-    const next: Record<FilterKey, number> = {
-      all: projectChannels.length,
-      pending: 0,
-      active: 0,
-      review: 0,
-      done: 0,
-      cancel: 0,
-    };
-    for (const channel of projectChannels) next[channel.status] += 1;
-    return next;
-  }, [projectChannels]);
 
   const selectedChannel = useMemo(
     () => projectChannels.find((channel) => channel.id === selectedChannelId) ?? null,
@@ -64,13 +52,6 @@ export function ChannelsPage() {
   const updateStatus = async (channel: Channel, status: ChannelStatus) => {
     const updated = await updateChannel(channel.id, { status });
     upsertChannel(updated);
-  };
-
-  const remove = async (channel: Channel) => {
-    if (!confirm(`Delete channel #${channel.name}?`)) return;
-    await deleteChannel(channel.id);
-    removeChannel(channel.id);
-    if (selectedChannelId === channel.id) setSelectedChannelId(null);
   };
 
   return (
@@ -91,11 +72,7 @@ export function ChannelsPage() {
         <TaskStyleChannels
           projectName={projectName}
           channels={projectChannels}
-          counts={counts}
-          filter={filter}
-          onFilter={setFilter}
           onStatus={updateStatus}
-          onDelete={remove}
           onSelect={(channel) => setSelectedChannelId(channel.id)}
           selectedChannelId={selectedChannelId}
           draggingId={draggingId}
@@ -116,11 +93,7 @@ export function ChannelsPage() {
 function TaskStyleChannels({
   projectName,
   channels,
-  counts,
-  filter,
-  onFilter,
   onStatus,
-  onDelete,
   onSelect,
   selectedChannelId,
   draggingId,
@@ -128,18 +101,12 @@ function TaskStyleChannels({
 }: {
   projectName: string;
   channels: Channel[];
-  counts: Record<FilterKey, number>;
-  filter: FilterKey;
-  onFilter: (filter: FilterKey) => void;
   onStatus: (channel: Channel, status: ChannelStatus) => Promise<void>;
-  onDelete: (channel: Channel) => Promise<void>;
   onSelect: (channel: Channel) => void;
   selectedChannelId: string | null;
   draggingId: string | null;
   onDraggingId: (id: string | null) => void;
 }) {
-  const visibleStatuses = filter === 'all' ? CHANNEL_STATUSES : [filter];
-
   const onDropToStatus = async (status: ChannelStatus, channelId: string) => {
     const channel = channels.find((c) => c.id === channelId);
     if (!channel || channel.status === status) return;
@@ -148,26 +115,9 @@ function TaskStyleChannels({
 
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-y-auto">
-      <div className="flex items-center gap-2 px-4 py-3 border-b-2 border-black bg-bg-card">
-        <FilterButton active={filter === 'all'} onClick={() => onFilter('all')}>
-          All <span className="font-mono text-xs">{counts.all}</span>
-        </FilterButton>
-        {CHANNEL_STATUSES.map((status) => (
-          <FilterButton key={status} active={filter === status} onClick={() => onFilter(status)}>
-            {STATUS_BADGE[status].label}{' '}
-            {counts[status] > 0 && <span className="font-mono text-xs">{counts[status]}</span>}
-          </FilterButton>
-        ))}
-      </div>
-
       <div className="flex-1 overflow-x-auto overflow-y-hidden p-4">
-        <div
-          className={cn(
-            'grid h-full min-w-[980px] gap-3',
-            visibleStatuses.length === 1 ? 'grid-cols-1' : 'grid-cols-5',
-          )}
-        >
-          {visibleStatuses.map((status) => {
+        <div className="grid h-full min-w-[980px] grid-cols-5 gap-3">
+          {CHANNEL_STATUSES.map((status) => {
             const items = channels.filter((channel) => channel.status === status);
             return (
               <StatusColumn
@@ -178,8 +128,6 @@ function TaskStyleChannels({
                 draggingId={draggingId}
                 onDraggingId={onDraggingId}
                 onDropChannel={onDropToStatus}
-                onStatus={onStatus}
-                onDelete={onDelete}
                 onSelect={onSelect}
                 selectedChannelId={selectedChannelId}
               />
@@ -198,8 +146,6 @@ function StatusColumn({
   draggingId,
   onDraggingId,
   onDropChannel,
-  onStatus,
-  onDelete,
   onSelect,
   selectedChannelId,
 }: {
@@ -209,8 +155,6 @@ function StatusColumn({
   draggingId: string | null;
   onDraggingId: (id: string | null) => void;
   onDropChannel: (status: ChannelStatus, channelId: string) => Promise<void>;
-  onStatus: (channel: Channel, status: ChannelStatus) => Promise<void>;
-  onDelete: (channel: Channel) => Promise<void>;
   onSelect: (channel: Channel) => void;
   selectedChannelId: string | null;
 }) {
@@ -265,8 +209,6 @@ function StatusColumn({
                 onDraggingId(null);
                 setOver(false);
               }}
-              onStatus={onStatus}
-              onDelete={onDelete}
               onSelect={onSelect}
               selected={selectedChannelId === channel.id}
             />
@@ -284,8 +226,6 @@ function ChannelRow({
   dragging = false,
   onDragStart,
   onDragEnd,
-  onStatus,
-  onDelete,
   onSelect,
   selected = false,
 }: {
@@ -295,36 +235,9 @@ function ChannelRow({
   dragging?: boolean;
   onDragStart?: () => void;
   onDragEnd?: () => void;
-  onStatus: (channel: Channel, status: ChannelStatus) => Promise<void>;
-  onDelete: (channel: Channel) => Promise<void>;
   onSelect: (channel: Channel) => void;
   selected?: boolean;
 }) {
-  const [busy, setBusy] = useState(false);
-  const badge = STATUS_BADGE[channel.status];
-
-  const cycleStatus = async () => {
-    if (busy) return;
-    const idx = CHANNEL_STATUSES.indexOf(channel.status);
-    const next = CHANNEL_STATUSES[(idx + 1) % CHANNEL_STATUSES.length]!;
-    setBusy(true);
-    try {
-      await onStatus(channel, next);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const remove = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await onDelete(channel);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div
       draggable={draggable}
@@ -342,19 +255,6 @@ function ChannelRow({
         selected && 'bg-accent-pink',
       )}
     >
-      <span className="font-mono text-sm text-text-secondary">#</span>
-      <button
-        onClick={() => void cycleStatus()}
-        disabled={busy}
-        className={cn(
-          'px-2 py-0.5 border-2 border-black rounded font-mono text-[10px] font-bold',
-          badge.bg,
-          busy && 'opacity-50',
-        )}
-        title="Click to cycle status"
-      >
-        {badge.label}
-      </button>
       <button
         type="button"
         onClick={() => onSelect(channel)}
@@ -387,26 +287,6 @@ function ChannelRow({
           <path d="M7 7h10v10" />
         </svg>
       </Link>
-      <button
-        type="button"
-        onClick={() => void remove()}
-        disabled={busy}
-        className="w-6 h-6 flex items-center justify-center border-2 border-black rounded hover:bg-accent-red"
-        title="Delete channel"
-        aria-label="Delete channel"
-      >
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-        >
-          <polyline points="3 6 5 6 21 6" />
-          <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
-        </svg>
-      </button>
     </div>
   );
 }
@@ -509,27 +389,5 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
         {value}
       </div>
     </div>
-  );
-}
-
-function FilterButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-1 px-3 py-1.5 border-2 border-black rounded font-bold text-xs',
-        active ? 'bg-accent-pink shadow-[2px_2px_0_0_#000]' : 'bg-bg-card hover:bg-accent-yellow',
-      )}
-    >
-      {children}
-    </button>
   );
 }

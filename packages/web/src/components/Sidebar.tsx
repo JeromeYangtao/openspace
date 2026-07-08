@@ -305,7 +305,10 @@ function ChatTabContent({
   onOpenSearch?: () => void;
   onNavigate?: () => void;
 }) {
-  const publicChannels = channels.filter((c) => c.type === 'channel');
+  const publicChannels = channels
+    .filter((c) => c.type === 'channel')
+    .filter((c) => c.id !== 'general' && c.name !== 'general')
+    .filter((c) => c.status === 'active' || c.status === 'review');
   const projectName = currentProject?.name;
   const dmUsers = users.filter((u) => u.id !== currentUserId);
   const [collapsed, setCollapsed] = useState({

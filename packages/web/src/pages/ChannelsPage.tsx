@@ -16,6 +16,10 @@ const STATUS_BADGE: Record<ChannelStatus, { label: string; bg: string }> = {
   cancel: { label: 'CANCEL', bg: 'bg-red-300' },
 };
 
+function isSystemChannel(channel: Channel): boolean {
+  return channel.id === 'general' || channel.name === 'general';
+}
+
 export function ChannelsPage() {
   const { projectName } = useParams<{ projectName: string }>();
   const projects = useProjectsStore((s) => s.projects);
@@ -34,6 +38,7 @@ export function ChannelsPage() {
     if (!project) return [];
     return channels
       .filter((c) => c.type === 'channel')
+      .filter((c) => !isSystemChannel(c))
       .filter((c) => c.project_id === project.id || !c.project_id)
       .sort((a, b) => a.created_at - b.created_at);
   }, [channels, project]);

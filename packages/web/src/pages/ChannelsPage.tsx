@@ -3,7 +3,7 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import type { Channel, ChannelStatus } from '@openspace/shared';
 import { CHANNEL_STATUSES } from '@openspace/shared';
 import { cn } from '../lib/cn';
-import { deleteChannel, updateChannel } from '../lib/api';
+import { updateChannel } from '../lib/api';
 import { projectChannelPath } from '../lib/routes';
 import { useChannelsStore } from '../stores/channels';
 import { useProjectsStore } from '../stores/projects';
@@ -25,7 +25,6 @@ export function ChannelsPage() {
   const projects = useProjectsStore((s) => s.projects);
   const channels = useChannelsStore((s) => s.channels);
   const upsertChannel = useChannelsStore((s) => s.upsert);
-  const removeChannel = useChannelsStore((s) => s.remove);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
 
@@ -55,13 +54,6 @@ export function ChannelsPage() {
     upsertChannel(updated);
   };
 
-  const remove = async (channel: Channel) => {
-    if (!confirm(`Delete channel #${channel.name}?`)) return;
-    await deleteChannel(channel.id);
-    removeChannel(channel.id);
-    if (selectedChannelId === channel.id) setSelectedChannelId(null);
-  };
-
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
       <header className="border-b-2 border-black bg-bg-card px-4 py-3 flex items-center gap-3">
@@ -81,7 +73,6 @@ export function ChannelsPage() {
           projectName={projectName}
           channels={projectChannels}
           onStatus={updateStatus}
-          onDelete={remove}
           onSelect={(channel) => setSelectedChannelId(channel.id)}
           selectedChannelId={selectedChannelId}
           draggingId={draggingId}
@@ -103,7 +94,6 @@ function TaskStyleChannels({
   projectName,
   channels,
   onStatus,
-  onDelete,
   onSelect,
   selectedChannelId,
   draggingId,
@@ -112,7 +102,6 @@ function TaskStyleChannels({
   projectName: string;
   channels: Channel[];
   onStatus: (channel: Channel, status: ChannelStatus) => Promise<void>;
-  onDelete: (channel: Channel) => Promise<void>;
   onSelect: (channel: Channel) => void;
   selectedChannelId: string | null;
   draggingId: string | null;
@@ -139,7 +128,6 @@ function TaskStyleChannels({
                 draggingId={draggingId}
                 onDraggingId={onDraggingId}
                 onDropChannel={onDropToStatus}
-                onDelete={onDelete}
                 onSelect={onSelect}
                 selectedChannelId={selectedChannelId}
               />
@@ -158,7 +146,6 @@ function StatusColumn({
   draggingId,
   onDraggingId,
   onDropChannel,
-  onDelete,
   onSelect,
   selectedChannelId,
 }: {
@@ -168,7 +155,6 @@ function StatusColumn({
   draggingId: string | null;
   onDraggingId: (id: string | null) => void;
   onDropChannel: (status: ChannelStatus, channelId: string) => Promise<void>;
-  onDelete: (channel: Channel) => Promise<void>;
   onSelect: (channel: Channel) => void;
   selectedChannelId: string | null;
 }) {
@@ -223,7 +209,6 @@ function StatusColumn({
                 onDraggingId(null);
                 setOver(false);
               }}
-              onDelete={onDelete}
               onSelect={onSelect}
               selected={selectedChannelId === channel.id}
             />
@@ -241,7 +226,6 @@ function ChannelRow({
   dragging = false,
   onDragStart,
   onDragEnd,
-  onDelete,
   onSelect,
   selected = false,
 }: {
@@ -251,22 +235,9 @@ function ChannelRow({
   dragging?: boolean;
   onDragStart?: () => void;
   onDragEnd?: () => void;
-  onDelete: (channel: Channel) => Promise<void>;
   onSelect: (channel: Channel) => void;
   selected?: boolean;
 }) {
-  const [busy, setBusy] = useState(false);
-
-  const remove = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await onDelete(channel);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div
       draggable={draggable}
@@ -284,7 +255,6 @@ function ChannelRow({
         selected && 'bg-accent-pink',
       )}
     >
-      <span className="font-mono text-sm text-text-secondary">#</span>
       <button
         type="button"
         onClick={() => onSelect(channel)}
@@ -317,26 +287,6 @@ function ChannelRow({
           <path d="M7 7h10v10" />
         </svg>
       </Link>
-      <button
-        type="button"
-        onClick={() => void remove()}
-        disabled={busy}
-        className="w-6 h-6 flex items-center justify-center border-2 border-black rounded hover:bg-accent-red"
-        title="Delete channel"
-        aria-label="Delete channel"
-      >
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-        >
-          <polyline points="3 6 5 6 21 6" />
-          <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
-        </svg>
-      </button>
     </div>
   );
 }

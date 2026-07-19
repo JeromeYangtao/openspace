@@ -14,6 +14,7 @@ type ActivityType = 'thinking' | 'working' | 'output' | 'idle' | 'error';
 
 export class ActivityRecorder {
   private hasEmittedWorking = false;
+  private disabled = false;
 
   constructor(
     private db: Database,
@@ -79,6 +80,11 @@ export class ActivityRecorder {
   }
 
   private append(type: ActivityType, detail: string): void {
+    if (this.disabled || !this.db.open) {
+      this.disabled = true;
+      return;
+    }
+
     try {
       activityRepo.append(this.db, {
         agent_id: this.agentId,
@@ -86,8 +92,16 @@ export class ActivityRecorder {
         type,
         detail,
       });
-    } catch {
+    } catch (e) {
+      if (isClosedDbError(e)) {
+        this.disabled = true;
+      }
       /* Ignore closed DB handles or transient activity-write failures. */
     }
   }
+}
+
+function isClosedDbError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /database connection is not open|database is not open|closed database/i.test(message);
 }

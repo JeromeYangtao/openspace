@@ -10,6 +10,13 @@ export type CLIEvent =
   | { type: 'session.started'; session_id: string; meta?: Record<string, unknown> }
   | { type: 'session.completed'; duration_ms?: number; usage?: UsageInfo }
   | { type: 'context_usage.updated'; usage: ContextUsageInfo }
+  | {
+      type: 'progress.updated';
+      source: string;
+      summary: string;
+      detail?: string;
+      item_id?: string;
+    }
   | { type: 'thinking.delta'; text: string }
   | { type: 'thinking.completed' }
   | { type: 'text.delta'; text: string }

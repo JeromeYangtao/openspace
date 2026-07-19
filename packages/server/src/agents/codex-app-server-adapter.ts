@@ -113,6 +113,17 @@ function compactJson(value: unknown, maxLength = 1200): string | undefined {
   }
 }
 
+function logUnknownCodexMethod(
+  kind: 'notification' | 'request',
+  method: string,
+  params: unknown,
+): void {
+  const preview = compactJson(params, 800) ?? '';
+  console.warn(
+    `[codex-app-server] unknown ${kind}: ${method}${preview ? ` params=${preview}` : ''}`,
+  );
+}
+
 function policyAmendmentFromParams(params: Record<string, unknown>): string | undefined {
   return compactJson(
     params.proposedExecpolicyAmendment ??
@@ -165,6 +176,96 @@ function errorMessageFromNotification(params: Record<string, unknown>): string {
     if (typeof message === 'string' && message) return message;
   }
   return 'Codex app-server error';
+}
+
+function truncateText(value: string, maxLength = 240): string {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength)}...` : compact;
+}
+
+function itemIdFromParams(params: Record<string, unknown>): string | undefined {
+  return typeof params.itemId === 'string' && params.itemId ? params.itemId : undefined;
+}
+
+function commandOutputSummary(params: Record<string, unknown>): string | null {
+  const delta = params.delta;
+  if (typeof delta === 'string' && delta.trim()) return truncateText(delta);
+  return null;
+}
+
+function planSummary(params: Record<string, unknown>): { summary: string; detail?: string } | null {
+  const delta = params.delta;
+  if (typeof delta === 'string' && delta.trim()) {
+    return { summary: truncateText(delta) };
+  }
+
+  const plan = params.plan;
+  if (!Array.isArray(plan)) return null;
+  const steps = plan
+    .map((step) => {
+      if (!step || typeof step !== 'object') return null;
+      const record = step as Record<string, unknown>;
+      const text =
+        typeof record.text === 'string'
+          ? record.text
+          : typeof record.description === 'string'
+            ? record.description
+            : typeof record.title === 'string'
+              ? record.title
+              : null;
+      if (!text) return null;
+      const status = typeof record.status === 'string' ? record.status : null;
+      return status ? `${status}: ${text}` : text;
+    })
+    .filter((step): step is string => Boolean(step));
+  const explanation = typeof params.explanation === 'string' ? params.explanation.trim() : '';
+  const detail = steps.slice(0, 8).join('\n');
+  if (!detail && !explanation) return null;
+  return {
+    summary: explanation ? truncateText(explanation) : `${steps.length} plan step(s) updated`,
+    detail: detail || undefined,
+  };
+}
+
+function diffSummary(params: Record<string, unknown>): string | null {
+  const diff = params.diff;
+  if (typeof diff !== 'string' || !diff.trim()) return null;
+  const changedFiles = new Set<string>();
+  for (const line of diff.split('\n')) {
+    const match = /^diff --git a\/(.+?) b\//.exec(line);
+    if (match?.[1]) changedFiles.add(match[1]);
+  }
+  if (changedFiles.size > 0) {
+    return `Updated diff for ${changedFiles.size} file(s): ${Array.from(changedFiles)
+      .slice(0, 4)
+      .join(', ')}`;
+  }
+  return `Updated diff (${diff.length} chars)`;
+}
+
+function fileChangeSummary(
+  params: Record<string, unknown>,
+): { summary: string; detail?: string } | null {
+  const changes = params.changes;
+  if (!Array.isArray(changes)) return null;
+  const paths = changes
+    .map((change) => {
+      if (!change || typeof change !== 'object') return null;
+      const record = change as Record<string, unknown>;
+      return (
+        stringFromParams(record, ['path', 'filePath', 'file', 'targetPath']) ??
+        stringFromParams(record, ['sourceFile', 'targetFile'])
+      );
+    })
+    .filter((path): path is string => Boolean(path));
+  const uniquePaths = Array.from(new Set(paths));
+  return {
+    summary:
+      uniquePaths.length > 0
+        ? `Updated patch for ${uniquePaths.length} file(s)`
+        : `Updated patch with ${changes.length} change(s)`,
+    detail: uniquePaths.slice(0, 6).join('\n') || undefined,
+  };
 }
 
 function numberField(record: Record<string, unknown>, key: string): number {
@@ -750,6 +851,7 @@ class CodexAppServerClient {
       method !== 'item/fileChange/requestApproval' &&
       method !== 'item/permissions/requestApproval'
     ) {
+      logUnknownCodexMethod('request', method, requestParams);
       this.send({
         id: requestId,
         error: { code: -32601, message: `Unsupported Codex server request: ${method}` },
@@ -834,6 +936,60 @@ class CodexAppServerClient {
       case 'item/reasoning/summaryTextDelta': {
         const delta = notificationParams.delta;
         if (typeof delta === 'string' && delta) turn.emit({ type: 'thinking.delta', text: delta });
+        break;
+      }
+
+      case 'turn/plan/updated':
+      case 'item/plan/delta': {
+        const progress = planSummary(notificationParams);
+        if (progress) {
+          turn.emit({
+            type: 'progress.updated',
+            source: 'plan',
+            summary: progress.summary,
+            detail: progress.detail,
+            item_id: itemIdFromParams(notificationParams),
+          });
+        }
+        break;
+      }
+
+      case 'turn/diff/updated': {
+        const summary = diffSummary(notificationParams);
+        if (summary) {
+          turn.emit({
+            type: 'progress.updated',
+            source: 'diff',
+            summary,
+          });
+        }
+        break;
+      }
+
+      case 'item/fileChange/patchUpdated': {
+        const progress = fileChangeSummary(notificationParams);
+        if (progress) {
+          turn.emit({
+            type: 'progress.updated',
+            source: 'file',
+            summary: progress.summary,
+            detail: progress.detail,
+            item_id: itemIdFromParams(notificationParams),
+          });
+        }
+        break;
+      }
+
+      case 'item/commandExecution/outputDelta': {
+        const summary = commandOutputSummary(notificationParams);
+        if (summary) {
+          turn.emit({
+            type: 'progress.updated',
+            source: 'shell',
+            summary,
+            item_id: itemIdFromParams(notificationParams),
+          });
+        }
         break;
       }
 
@@ -927,6 +1083,7 @@ class CodexAppServerClient {
       }
 
       default:
+        logUnknownCodexMethod('notification', method, notificationParams);
         break;
     }
   }

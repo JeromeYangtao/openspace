@@ -133,6 +133,13 @@ export type AgentActivityPayload =
       type: 'context_usage.updated';
       usage: AgentContextUsage;
     }
+  | {
+      type: 'progress.updated';
+      source: string;
+      summary: string;
+      detail?: string;
+      item_id?: string;
+    }
   | { type: 'thinking.delta'; text: string }
   | { type: 'thinking.completed' }
   | { type: 'text.delta'; text: string }

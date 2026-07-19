@@ -318,7 +318,7 @@ function previewThinkingTail(text: string): string {
 }
 
 type ActivityRow = {
-  kind: 'run' | 'session' | 'thinking' | 'text' | 'tool' | 'approval' | 'error';
+  kind: 'run' | 'session' | 'thinking' | 'progress' | 'text' | 'tool' | 'approval' | 'error';
   label: string;
   text: string;
   callId?: string;
@@ -354,6 +354,13 @@ function compactActivityEvents(events: AgentActivityPayload[]): ActivityRow[] {
       }
       case 'thinking.completed':
         rows.push({ kind: 'thinking', label: 'thinking', text: '\n' });
+        break;
+      case 'progress.updated':
+        rows.push({
+          kind: 'progress',
+          label: event.source,
+          text: [event.summary, event.detail].filter(Boolean).join('\n'),
+        });
         break;
       case 'text.delta':
         rows.push({ kind: 'text', label: 'text', text: event.text.slice(0, 180) });
@@ -430,6 +437,7 @@ function rowTone(kind: ActivityRow['kind']): string {
   if (kind === 'error') return 'text-accent-red';
   if (kind === 'approval') return 'text-accent-orange';
   if (kind === 'tool') return 'text-accent-purple';
+  if (kind === 'progress') return 'text-accent-teal';
   if (kind === 'run') return 'text-accent-teal';
   if (kind === 'session') return 'text-text-secondary';
   return 'text-black';
@@ -444,12 +452,10 @@ function ApprovalRequestRow({
   text: string;
   supported?: boolean;
 }) {
-  const [pendingDecision, setPendingDecision] = useState<
-    Extract<
-      AgentApprovalDecision,
-      'approve' | 'approve_for_session' | 'approve_with_policy' | 'reject'
-    > | null
-  >(null);
+  const [pendingDecision, setPendingDecision] = useState<Extract<
+    AgentApprovalDecision,
+    'approve' | 'approve_for_session' | 'approve_with_policy' | 'reject'
+  > | null>(null);
   const resolved = useApprovalsStore((s) => (callId ? s.resolvedById.get(callId) : undefined));
   const markResolved = useApprovalsStore((s) => s.markResolved);
   const [error, setError] = useState<string | null>(null);

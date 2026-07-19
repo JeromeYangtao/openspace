@@ -36,6 +36,11 @@ export class ActivityRecorder {
           }
           break;
 
+        case 'progress.updated':
+          this.hasEmittedWorking = true;
+          this.append('working', `${event.source}: ${event.summary}`);
+          break;
+
         case 'tool.started': {
           this.hasEmittedWorking = true;
           const summary = summarizeToolArgs(event.tool, event.args);

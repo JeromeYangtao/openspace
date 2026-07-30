@@ -47,7 +47,7 @@ export type CLIEvent =
       policyAmendment?: string;
       supported: boolean;
     }
-  | { type: 'error'; message: string; code?: string; recoverable?: boolean };
+  | { type: 'error'; message: string; code?: string; recoverable?: boolean; fatal?: boolean };
 
 export interface UsageInfo {
   input_tokens?: number;

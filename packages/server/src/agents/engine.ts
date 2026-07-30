@@ -42,6 +42,7 @@ import { concurrencyQueue } from './queue.js';
 import { runWithAdapter } from './runner.js';
 import { createAdapterForRuntime } from './adapter-factory.js';
 import { completeAgentRun, registerAgentRun, serverInstanceId } from './run-manager.js';
+import { isFatalErrorEvent } from './error-classification.js';
 import type { CLIAdapter, CLIEvent } from './types.js';
 export { abortAgentRun, abortChannelAgentRuns } from './run-manager.js';
 
@@ -285,7 +286,7 @@ export async function triggerAgent(
           }
 
           // 工具调用状态 → system event 可选，MVP 仅通过 activity 记录（前端 Profile 页看）
-          if (event.type === 'error') {
+          if (isFatalErrorEvent(event)) {
             log.warn(`[engine] agent ${agent.name} error: ${event.message}`);
           }
         },
@@ -320,9 +321,9 @@ export async function triggerAgent(
 
   const result = runResult.result;
   const fullText = result.fullText.trim();
-  const hasError = result.events.some((e) => e.type === 'error');
+  const hasFatalError = result.events.some(isFatalErrorEvent);
   const finalOk =
-    !result.timedOut && !hasError && (result.exitCode === 0 || result.exitCode === null);
+    !result.timedOut && !hasFatalError && (result.exitCode === 0 || result.exitCode === null);
 
   // 7. 更新占位消息的最终 content / metadata
   const finalMetadata: MessageMetadata = {
@@ -377,13 +378,13 @@ export async function triggerAgent(
     agentRunRepo.end(db, run.id);
     broadcastAgentStatus(agent.id, 'idle', ctx.channelId);
   } else if (result.aborted) {
-    const errEvent = result.events.find((e) => e.type === 'error');
+    const errEvent = result.events.find(isFatalErrorEvent);
     const errMsg = errEvent && 'message' in errEvent ? errEvent.message : 'Process aborted by user';
     agentRunRepo.stop(db, run.id, errMsg);
     broadcastAgentStatus(agent.id, 'stopped', ctx.channelId);
     emitSystemError(db, ctx.channelId, agent.name, errMsg);
   } else {
-    const errEvent = result.events.find((e) => e.type === 'error');
+    const errEvent = result.events.find(isFatalErrorEvent);
     const errMsg = errEvent && 'message' in errEvent ? errEvent.message : 'Unknown error';
     agentRunRepo.end(db, run.id, errMsg);
     broadcastAgentStatus(agent.id, 'error', ctx.channelId);

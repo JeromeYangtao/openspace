@@ -171,7 +171,7 @@ export type AgentActivityPayload =
       policyAmendment?: string;
       supported: boolean;
     }
-  | { type: 'error'; message: string; code?: string; recoverable?: boolean };
+  | { type: 'error'; message: string; code?: string; recoverable?: boolean; fatal?: boolean };
 
 export interface AgentTokenUsageBreakdown {
   total_tokens: number;

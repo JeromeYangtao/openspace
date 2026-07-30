@@ -19,6 +19,7 @@ const execFileAsync = promisify(execFile);
 const COMPACT_TIMEOUT_MS = 120_000;
 const APP_SERVER_KILL_GRACE_MS = 2_000;
 const APP_SERVER_STALE_MS = 120_000;
+const APP_SERVER_IDLE_DISPOSE_MS = 10 * 60 * 1000;
 
 type JsonRpcId = number | string;
 type JsonRpcMessage = {
@@ -176,6 +177,27 @@ function errorMessageFromNotification(params: Record<string, unknown>): string {
     if (typeof message === 'string' && message) return message;
   }
   return 'Codex app-server error';
+}
+
+export function isRecoverableCodexErrorNotification(params: Record<string, unknown>): boolean {
+  return params.willRetry === true || params.recoverable === true;
+}
+
+export function shouldDisposeIdleCodexAppServerClient(state: {
+  disposed: boolean;
+  activeTurn: boolean;
+  pendingRequests: number;
+  hasChild: boolean;
+  timerGeneration: number;
+  currentGeneration: number;
+}): boolean {
+  return (
+    !state.disposed &&
+    !state.activeTurn &&
+    state.pendingRequests === 0 &&
+    state.hasChild &&
+    state.timerGeneration === state.currentGeneration
+  );
 }
 
 function truncateText(value: string, maxLength = 240): string {
@@ -398,6 +420,8 @@ class CodexAppServerClient {
   private lastStderrAt: number | null = null;
   private closedAt: number | null = null;
   private lastError: string | null = null;
+  private idleDisposeTimer: NodeJS.Timeout | null = null;
+  private idleDisposeGeneration = 0;
 
   constructor(
     readonly key: string,
@@ -449,6 +473,7 @@ class CodexAppServerClient {
   }
 
   async runTurn(params: BuildCommandParams, options: RunnerOptions = {}): Promise<RunnerResult> {
+    this.cancelIdleDispose();
     try {
       await this.ensureStarted();
     } catch (e) {
@@ -565,6 +590,7 @@ class CodexAppServerClient {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.cancelIdleDispose();
     this.rejectPendingRequests(new Error('Codex app-server disposed'));
     if (this.activeTurn && !this.activeTurn.settled) {
       this.activeTurn.emit({
@@ -590,6 +616,7 @@ class CodexAppServerClient {
   }
 
   private async ensureStarted(): Promise<void> {
+    this.cancelIdleDispose();
     if (this.child && !this.disposed) return;
     if (this.startPromise) return this.startPromise;
     this.disposed = false;
@@ -602,6 +629,7 @@ class CodexAppServerClient {
   }
 
   private async start(): Promise<void> {
+    this.cancelIdleDispose();
     this.child = spawn('codex', ['app-server', '--listen', 'stdio://'], {
       cwd: this.params.workingDirectory,
       env: this.params.envVars ? { ...process.env, ...this.params.envVars } : process.env,
@@ -655,6 +683,7 @@ class CodexAppServerClient {
     });
 
     this.child.on('close', (code) => {
+      this.cancelIdleDispose();
       this.closedAt = Date.now();
       this.rejectPendingRequests(
         new Error(`Codex app-server exited${code === null ? '' : ` (${code})`}`),
@@ -778,6 +807,7 @@ class CodexAppServerClient {
     this.cleanupApprovals(turn);
     this.activeTurn = null;
     turn.resolve(result);
+    this.scheduleIdleDispose();
   }
 
   private cleanupApprovals(turn: ActiveTurn): void {
@@ -792,6 +822,45 @@ class CodexAppServerClient {
       pending.reject(error);
     }
     this.pendingRequests.clear();
+  }
+
+  private cancelIdleDispose(): void {
+    this.idleDisposeGeneration += 1;
+    if (!this.idleDisposeTimer) return;
+    clearTimeout(this.idleDisposeTimer);
+    this.idleDisposeTimer = null;
+  }
+
+  private scheduleIdleDispose(): void {
+    if (
+      !shouldDisposeIdleCodexAppServerClient({
+        disposed: this.disposed,
+        activeTurn: this.activeTurn !== null,
+        pendingRequests: this.pendingRequests.size,
+        hasChild: this.child !== null,
+        timerGeneration: this.idleDisposeGeneration,
+        currentGeneration: this.idleDisposeGeneration,
+      })
+    ) {
+      return;
+    }
+    const generation = this.idleDisposeGeneration;
+    this.idleDisposeTimer = setTimeout(() => {
+      if (
+        !shouldDisposeIdleCodexAppServerClient({
+          disposed: this.disposed,
+          activeTurn: this.activeTurn !== null,
+          pendingRequests: this.pendingRequests.size,
+          hasChild: this.child !== null,
+          timerGeneration: generation,
+          currentGeneration: this.idleDisposeGeneration,
+        })
+      ) {
+        return;
+      }
+      this.dispose();
+    }, APP_SERVER_IDLE_DISPOSE_MS);
+    this.idleDisposeTimer.unref();
   }
 
   private send(message: JsonRpcMessage): void {
@@ -1074,11 +1143,22 @@ class CodexAppServerClient {
       }
 
       case 'error': {
-        turn.emit({
-          type: 'error',
-          message: errorMessageFromNotification(notificationParams),
-          code: 'codex_app_server_error',
-        });
+        const message = errorMessageFromNotification(notificationParams);
+        if (isRecoverableCodexErrorNotification(notificationParams)) {
+          turn.emit({
+            type: 'progress.updated',
+            source: 'codex',
+            summary: 'Recovering from upstream error',
+            detail: message,
+          });
+        } else {
+          turn.emit({
+            type: 'error',
+            message,
+            code: 'codex_app_server_error',
+            fatal: true,
+          });
+        }
         break;
       }
 

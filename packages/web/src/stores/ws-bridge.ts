@@ -18,6 +18,10 @@ export function initWSBridge(): void {
 
   wsClient.subscribe((event: ServerEvent) => {
     switch (event.type) {
+      case 'subscribed':
+        // Reconcile messages missed while disconnected after the subscription is active.
+        useMessagesStore.getState().scheduleChannelRefresh(event.channel_id, 0);
+        break;
       case 'message':
         useMessagesStore.getState().upsertMessage(event.message);
         break;

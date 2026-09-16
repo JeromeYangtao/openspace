@@ -10,7 +10,11 @@ import type { ClientEvent, ServerEvent } from '@openspace/shared';
 
 type Handler = (event: ServerEvent) => void;
 
-class WSClient {
+const HEARTBEAT_INTERVAL_MS = 20_000;
+const HEARTBEAT_TIMEOUT_MS = 10_000;
+const CONNECTION_TIMEOUT_MS = 10_000;
+
+export class WSClient {
   private ws: WebSocket | null = null;
   private handlers = new Set<Handler>();
   private reconnectAttempts = 0;
@@ -20,27 +24,61 @@ class WSClient {
   private channelSubscriptions = new Set<string>();
   private reconnectEnabled = true;
 
+  private healthTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastVerifiedAt = 0;
+  private awaitingPong = false;
+  private listeningForResume = false;
+
+  private onResume = () => {
+    if (document.visibilityState === 'hidden' || !this.reconnectEnabled) return;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      if (!this.isFresh()) this.recover(this.ws);
+      else if (!this.awaitingPong) this.ping(this.ws);
+    } else if (this.ws) {
+      this.recover(this.ws);
+    } else {
+      this.connect();
+    }
+  };
+
   connect(): void {
     this.reconnectEnabled = true;
+    if (!this.listeningForResume) {
+      window.addEventListener('online', this.onResume);
+      window.addEventListener('pageshow', this.onResume);
+      document.addEventListener('visibilitychange', this.onResume);
+      this.listeningForResume = true;
+    }
     if (
       this.ws &&
       (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
     ) {
       return;
     }
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.clearHealthTimer();
     this.setStatus('connecting');
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${protocol}//${window.location.host}/ws`;
     const ws = new WebSocket(url);
     this.ws = ws;
+    this.healthTimer = setTimeout(() => this.recover(ws), CONNECTION_TIMEOUT_MS);
 
     ws.onopen = () => {
+      if (this.ws !== ws) return;
+      this.lastVerifiedAt = Date.now();
+      this.awaitingPong = false;
+      this.scheduleHeartbeat(ws);
       this.reconnectAttempts = 0;
       this.setStatus('open');
       this.restoreSubscriptions();
     };
 
     ws.onclose = () => {
+      if (this.ws !== ws) return;
+      this.ws = null;
+      this.clearHealthTimer();
       this.setStatus('closed');
       if (this.reconnectEnabled) {
         this.scheduleReconnect();
@@ -48,15 +86,21 @@ class WSClient {
     };
 
     ws.onerror = () => {
-      // close 会紧随 error，交给 close 处理
+      this.recover(ws);
     };
 
     ws.onmessage = (ev) => {
+      if (this.ws !== ws) return;
       let event: ServerEvent;
       try {
         event = JSON.parse(ev.data as string) as ServerEvent;
       } catch {
         return;
+      }
+      if (event.type === 'pong' && this.awaitingPong) {
+        this.lastVerifiedAt = Date.now();
+        this.awaitingPong = false;
+        this.scheduleHeartbeat(ws);
       }
       for (const h of this.handlers) {
         try {
@@ -93,12 +137,53 @@ class WSClient {
     return this.sendNow(event);
   }
 
+  private isFresh(): boolean {
+    return Date.now() - this.lastVerifiedAt < HEARTBEAT_INTERVAL_MS + HEARTBEAT_TIMEOUT_MS;
+  }
+
+  private clearHealthTimer() {
+    if (this.healthTimer) clearTimeout(this.healthTimer);
+    this.healthTimer = null;
+  }
+
+  private scheduleHeartbeat(ws: WebSocket) {
+    this.clearHealthTimer();
+    this.healthTimer = setTimeout(() => this.ping(ws), HEARTBEAT_INTERVAL_MS);
+  }
+
+  private ping(ws: WebSocket) {
+    if (this.ws !== ws) return;
+    this.clearHealthTimer();
+    this.awaitingPong = true;
+    this.healthTimer = setTimeout(() => this.recover(ws), HEARTBEAT_TIMEOUT_MS);
+    this.sendNow({ type: 'ping' });
+  }
+
+  private recover(ws: WebSocket) {
+    if (this.ws !== ws) return;
+    // Detach first: a late close/error from this socket must not affect its replacement.
+    this.ws = null;
+    this.clearHealthTimer();
+    this.awaitingPong = false;
+    ws.close();
+    this.setStatus('closed');
+    this.scheduleReconnect();
+  }
+
   private sendNow(event: ClientEvent): boolean {
     if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    const ws = this.ws;
+    // Timers may be suspended while the tab or computer sleeps. Check here too,
+    // so a stale OPEN socket does not make the composer discard the draft.
+    if (event.type === 'send_message' && !this.isFresh()) {
+      this.recover(ws);
+      return false;
+    }
     try {
-      this.ws.send(JSON.stringify(event));
+      ws.send(JSON.stringify(event));
       return true;
     } catch {
+      this.recover(ws);
       return false;
     }
   }
@@ -146,9 +231,16 @@ class WSClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.ws?.close();
+    this.clearHealthTimer();
+    window.removeEventListener('online', this.onResume);
+    window.removeEventListener('pageshow', this.onResume);
+    document.removeEventListener('visibilitychange', this.onResume);
+    this.listeningForResume = false;
+    const ws = this.ws;
     this.ws = null;
+    ws?.close();
     this.setStatus('closed');
+    if (this.reconnectEnabled) this.scheduleReconnect();
   }
 }
 

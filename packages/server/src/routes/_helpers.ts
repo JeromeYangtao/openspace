@@ -7,8 +7,7 @@
  *   - 全局视图（如 GET /api/inbox）需要遍历 listOpenDbs 自己合并。
  *   - 新建场景（POST /api/channels）必须通过 query / body 显式传 project_id。
  *
- * 启动时建议 warm-up：openProjectDb(workspacePath) for each recent project，
- * 否则 findDbByResource 会因为 db 没打开而漏匹配。
+ * 资源反查先查句柄池；未命中时逐个懒加载已注册项目，避免 idle/LRU 回收导致假 404。
  */
 
 import type { Database } from 'better-sqlite3';
@@ -56,20 +55,36 @@ export function dbForResource(
   id: string | number,
 ): ProjectDbContext | null {
   const found = findDbByResource(table, id);
-  if (!found) return null;
-  const project = projectsService.getByPath(found.workspacePath);
-  if (!project) return null;
-  return {
-    db: found.db,
-    workspacePath: found.workspacePath,
-    projectId: project.id,
-  };
+  if (found) {
+    const project = projectsService.getByPath(found.workspacePath);
+    if (project) {
+      return { db: found.db, workspacePath: found.workspacePath, projectId: project.id };
+    }
+  }
+
+  const searchedPaths = new Set(listOpenDbs().map(({ workspacePath }) => workspacePath));
+  const errors: unknown[] = [];
+  for (const project of projectsService.list()) {
+    if (searchedPaths.has(project.workspace_path)) continue;
+    try {
+      const db = openProjectDb(project.workspace_path);
+      // Query immediately: warming all projects first can evict the target again
+      // when the registered project count exceeds the pool limit.
+      if (db.prepare(`SELECT 1 FROM ${table} WHERE id = ? LIMIT 1`).get(id)) {
+        return { db, workspacePath: project.workspace_path, projectId: project.id };
+      }
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  // An unreadable project must not hide a match in another project, but an
+  // incomplete search must not be reported as a definitive resource-not-found.
+  if (errors.length) throw new AggregateError(errors, 'Failed to search project databases');
+  return null;
 }
 
 /** 遍历所有打开的项目 db，逐个 callback 收集结果（全局视图用）*/
-export function forEachProjectDb<T>(
-  fn: (ctx: ProjectDbContext) => T[],
-): T[] {
+export function forEachProjectDb<T>(fn: (ctx: ProjectDbContext) => T[]): T[] {
   const out: T[] = [];
   for (const { db, workspacePath } of listOpenDbs()) {
     const project = projectsService.getByPath(workspacePath);

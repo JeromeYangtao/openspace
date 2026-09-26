@@ -124,6 +124,14 @@ pnpm lint            # ESLint
 pnpm format          # Prettier
 ```
 
+### Agent 权限确认
+
+Agent 默认直接执行已授权范围内的常规读取、工作区编辑和测试，仅在缺少权限、未授权的破坏性操作或关键意图不明确时询问。
+
+Codex 使用 `on-request` + `auto_review`：保留工作区写入沙箱和联网限制，越界请求先交给 Codex 自动审核，通过后继续执行。自动审核拒绝时，Agent 应尝试安全替代方案，或说明原因并请求缺少的授权；这不保证每次拒绝都会弹出审批卡片。运行时仍发给 OpenSpace 的审批请求会继续显示审批卡片，可选择单次批准、会话内批准或批准规则。
+
+需要支持 `auto_review` 的 Codex app-server（本地验证协议版本：`codex-cli 0.156.1`）。若使用旧版本或希望所有审批请求都手动处理，可设置 `OPENSPACE_CODEX_APPROVALS_REVIEWER=user` 并重启服务。显式配置的 Workflow 审批步骤仍需确认。
+
 ### 快捷键
 
 - `⌘/Ctrl + K` — 全局搜索

@@ -533,6 +533,12 @@ class CodexAppServerClient {
   private async startTurn(params: BuildCommandParams, turn: ActiveTurn): Promise<void> {
     try {
       const cwd = params.workingDirectory ?? process.cwd();
+      // Keep sandbox restrictions; let Codex review escalations before involving the user.
+      const approvalsReviewer =
+        (params.envVars?.OPENSPACE_CODEX_APPROVALS_REVIEWER ??
+          process.env.OPENSPACE_CODEX_APPROVALS_REVIEWER) === 'user'
+          ? 'user'
+          : 'auto_review';
       const threadResult = await this.request(
         params.resumeSessionId ? 'thread/resume' : 'thread/start',
         {
@@ -540,7 +546,7 @@ class CodexAppServerClient {
           cwd,
           runtimeWorkspaceRoots: [cwd],
           approvalPolicy: 'on-request',
-          approvalsReviewer: 'user',
+          approvalsReviewer,
           sandbox: sandboxMode(params),
           ...(normalizeModel(params.model) ? { model: normalizeModel(params.model) } : {}),
         },
@@ -562,6 +568,7 @@ class CodexAppServerClient {
         meta: {
           backend: 'app-server',
           approvalPolicy: 'on-request',
+          approvalsReviewer,
           sandbox: sandboxMode(params),
         },
       });
@@ -572,7 +579,7 @@ class CodexAppServerClient {
         cwd,
         runtimeWorkspaceRoots: [cwd],
         approvalPolicy: 'on-request',
-        approvalsReviewer: 'user',
+        approvalsReviewer,
         sandboxPolicy: sandboxPolicy(params),
         ...(normalizeModel(params.model) ? { model: normalizeModel(params.model) } : {}),
         effort: normalizeReasoning(params.reasoning),

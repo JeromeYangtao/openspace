@@ -43,7 +43,7 @@ OPENSPACE_PNPM_VERSION=10
 
 ### 前置
 
-- **Node.js ≥ 20**, **pnpm ≥ 10**
+- **Node.js 22.14+（22.x）或 ≥ 23.6**，推荐 Node.js 24；**pnpm ≥ 10**。`better-sqlite3` 13 使用 [Node-API 10](https://nodejs.org/api/n-api.html#node-api-version-matrix)，旧版 Node 22 不兼容。
 - 至少一个本地 coding runtime 已安装并登录：
   - **Codex CLI** (`codex`)
   - **[Cursor CLI](https://cursor.sh)** (`cursor-agent`)，或在 Settings 中配置 Cursor SDK API key 改走 SDK 旁路

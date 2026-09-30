@@ -31,8 +31,9 @@ need_cmd node
 need_cmd npm
 
 node_major="$(node -p "Number(process.versions.node.split('.')[0])")"
-if [ "$node_major" -lt 20 ]; then
-  fail "Node.js >= 20 is required. Current version: $(node -v)"
+node_api_version="$(node -p "Number(process.versions.napi || 0)")"
+if [ "$node_major" -lt 22 ] || [ "$node_api_version" -lt 10 ]; then
+  fail "Node.js 22.14+ (22.x) or >= 23.6 with Node-API 10 is required. Current version: $(node -v)"
 fi
 
 info "Preparing install directory: $INSTALL_DIR"

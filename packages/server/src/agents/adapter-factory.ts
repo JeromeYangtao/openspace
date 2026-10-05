@@ -13,9 +13,9 @@
  * （需要异步 healthcheck，超出本次范围；见 docs/cursorsdkadapter.md §S-1）。
  */
 
-import { CursorAdapter } from './cursor-adapter.js';
-import { CursorSdkAdapter } from './cursor-sdk-adapter.js';
-import { CodexAppServerAdapter } from './codex-app-server-adapter.js';
+import { CursorAdapter } from './cursor/cursor-adapter.js';
+import { CursorSdkAdapter } from './cursor/cursor-sdk-adapter.js';
+import { CodexAppServerAdapter } from './codex/codex-app-server-adapter.js';
 import type { Runtime } from '@openspace/shared';
 import type { CLIAdapter } from './types.js';
 

@@ -1,3 +1,4 @@
+import { GlobalInputBanner } from './GlobalInputBanner';
 import { useEffect, useMemo, useState } from 'react';
 import { useMatch } from 'react-router-dom';
 import { useChannelsStore } from '../stores/channels';
@@ -91,6 +92,7 @@ export function Layout({ children }: Props) {
       )}
     >
       <GlobalApprovalBanner />
+      <GlobalInputBanner />
       {children}
       <CreateAgentDialog
         open={createAgentOpen}

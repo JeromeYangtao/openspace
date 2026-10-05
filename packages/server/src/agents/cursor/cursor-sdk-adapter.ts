@@ -28,7 +28,7 @@ import type {
   RunnerOptions,
   RunnerResult,
   SpawnSpec,
-} from './types.js';
+} from '../types.js';
 
 // 仅 import type，避免触发 SDK runtime 加载（间接 sqlite3 native binding）
 type SdkModule = typeof import('@cursor/sdk');

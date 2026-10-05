@@ -33,7 +33,9 @@ export interface ApprovalContext {
 let nextApprovalId = 1;
 const pending = new Map<string, PendingApproval>();
 
-export function registerApproval(input: Omit<PendingApproval, 'id' | 'createdAt'>): PendingApproval {
+export function registerApproval(
+  input: Omit<PendingApproval, 'id' | 'createdAt'>,
+): PendingApproval {
   const approval: PendingApproval = {
     ...input,
     id: `approval-${Date.now()}-${nextApprovalId++}`,
@@ -74,4 +76,9 @@ export function cancelApproval(id: string): void {
 
 export function listPendingApprovals(): PendingApproval[] {
   return Array.from(pending.values()).sort((a, b) => a.createdAt - b.createdAt);
+}
+
+/** A server-resolved approval must disappear without sending another response. */
+export function forgetApproval(id: string): void {
+  pending.delete(id);
 }

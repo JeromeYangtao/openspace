@@ -20,7 +20,7 @@ import {
   writeCursorSettings,
 } from '../config/cursor-settings.js';
 import { configureCursorRipgrep } from '../load-env.js';
-import { CursorSdkAdapter } from '../agents/cursor-sdk-adapter.js';
+import { CursorSdkAdapter } from '../agents/cursor/cursor-sdk-adapter.js';
 
 export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/settings/cursor', async (req): Promise<CursorBackendStatus> => {

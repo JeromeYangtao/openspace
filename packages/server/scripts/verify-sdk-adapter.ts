@@ -16,9 +16,9 @@ const envLoad = loadDotenv();
 const rgConfig = configureCursorRipgrep();
 
 import { createCodexAdapter, createCursorAdapter } from '../src/agents/adapter-factory.js';
-import { CursorSdkAdapter } from '../src/agents/cursor-sdk-adapter.js';
-import { CursorAdapter } from '../src/agents/cursor-adapter.js';
-import { CodexAppServerAdapter } from '../src/agents/codex-app-server-adapter.js';
+import { CursorSdkAdapter } from '../src/agents/cursor/cursor-sdk-adapter.js';
+import { CursorAdapter } from '../src/agents/cursor/cursor-adapter.js';
+import { CodexAppServerAdapter } from '../src/agents/codex/codex-app-server-adapter.js';
 import { summarizeToolArgs } from '../src/agents/summarize-tool-args.js';
 
 if (envLoad.loaded) {

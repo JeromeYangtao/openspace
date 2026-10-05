@@ -1,7 +1,14 @@
+import { registerInput, resolveInput, forgetInput, getPendingInput } from '../input-manager.js';
+import type { AgentInputQuestion } from '@openspace/shared';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { CodexRuntimeState, CodexRuntimeStatus } from '@openspace/shared';
-import { cancelApproval, registerApproval, type ApprovalDecision } from './approval-manager.js';
+import {
+  cancelApproval,
+  forgetApproval,
+  registerApproval,
+  type ApprovalDecision,
+} from '../approval-manager.js';
 import type {
   AdapterCapabilities,
   BuildCommandParams,
@@ -12,7 +19,7 @@ import type {
   RunnerResult,
   SpawnSpec,
   TokenUsageBreakdown,
-} from './types.js';
+} from '../types.js';
 import { parseTokenCountInfo } from './codex-session-log.js';
 
 const execFileAsync = promisify(execFile);
@@ -391,6 +398,11 @@ interface ActiveTurn {
   lastEventAt: number | null;
   events: CLIEvent[];
   pendingApprovalIds: Set<string>;
+  items: Map<
+    string,
+    { text: string; phase: string | null; completed: boolean; toolStarted: boolean }
+  >;
+  serverRequests: Map<JsonRpcId, { id: string; kind: 'input' | 'approval' }>;
   options: RunnerOptions;
   resolve: (result: RunnerResult) => void;
   fullText: string;
@@ -412,6 +424,10 @@ class CodexAppServerClient {
   private nextRequestId = 1;
   private readonly pendingRequests = new Map<JsonRpcId, PendingRequest>();
   private activeTurn: ActiveTurn | null = null;
+  private readonly outstandingInputs = new Map<
+    JsonRpcId,
+    { id: string; threadId: string | null }
+  >();
   private startPromise: Promise<void> | null = null;
   private disposed = false;
   private startedAt: number | null = null;
@@ -573,7 +589,7 @@ class CodexAppServerClient {
         },
       });
 
-      await this.request('turn/start', {
+      const started = await this.request('turn/start', {
         threadId,
         input: [{ type: 'text', text: promptWithContext(params), text_elements: [] }],
         cwd,
@@ -584,6 +600,8 @@ class CodexAppServerClient {
         ...(normalizeModel(params.model) ? { model: normalizeModel(params.model) } : {}),
         effort: normalizeReasoning(params.reasoning),
       });
+      const startedId = (started as { turn?: { id?: string } })?.turn?.id;
+      if (!turn.turnId && startedId) turn.turnId = startedId;
     } catch (e) {
       turn.emit({
         type: 'error',
@@ -599,6 +617,9 @@ class CodexAppServerClient {
     this.disposed = true;
     this.cancelIdleDispose();
     this.rejectPendingRequests(new Error('Codex app-server disposed'));
+    for (const { id } of [...this.outstandingInputs.values()])
+      resolveInput(id, { action: 'cancel' });
+    this.outstandingInputs.clear();
     if (this.activeTurn && !this.activeTurn.settled) {
       this.activeTurn.emit({
         type: 'error',
@@ -703,6 +724,8 @@ class CodexAppServerClient {
         });
         this.resolveActiveTurn(this.activeTurn.finish(code));
       }
+      for (const { id } of this.outstandingInputs.values()) forgetInput(id);
+      this.outstandingInputs.clear();
       this.child = null;
       this.onDispose(this.key);
     });
@@ -727,6 +750,8 @@ class CodexAppServerClient {
       lastEventAt: null,
       events: [],
       pendingApprovalIds: new Set<string>(),
+      items: new Map(),
+      serverRequests: new Map(),
       options,
       resolve: () => {},
       fullText: '',
@@ -822,6 +847,11 @@ class CodexAppServerClient {
       cancelApproval(id);
     }
     turn.pendingApprovalIds.clear();
+    for (const request of turn.serverRequests.values()) {
+      if (request.kind === 'input' && getPendingInput(request.id)?.blocking)
+        resolveInput(request.id, { action: 'cancel' });
+    }
+    turn.serverRequests.clear();
   }
 
   private rejectPendingRequests(error: Error): void {
@@ -922,6 +952,65 @@ class CodexAppServerClient {
       });
       return;
     }
+    if (!this.matchesTurn(turn, requestParams)) {
+      this.send({
+        id: requestId,
+        error: { code: -32000, message: 'Request belongs to another turn' },
+      });
+      return;
+    }
+    if (method === 'item/tool/requestUserInput' || method === 'mcpServer/elicitation/request') {
+      const questions = method === 'item/tool/requestUserInput';
+      const input = registerInput({
+        kind: questions ? 'questions' : 'mcp',
+        title: questions
+          ? 'Agent needs your input'
+          : String(requestParams.message ?? requestParams.title ?? 'MCP input requested'),
+        blocking: questions ? requestParams.isBlocking !== false : true,
+        ...(questions
+          ? { questions: requestParams.questions as AgentInputQuestion[] }
+          : {
+              mode: String(requestParams.mode ?? 'form'),
+              schema: requestParams.requestedSchema as Record<string, unknown> | undefined,
+              url: typeof requestParams.url === 'string' ? requestParams.url : undefined,
+            }),
+        respond: (response) => {
+          turn.serverRequests.delete(requestId);
+          this.outstandingInputs.delete(requestId);
+          this.send({
+            id: requestId,
+            result: questions
+              ? {
+                  answers:
+                    response.action === 'accept'
+                      ? Object.fromEntries(
+                          Object.entries(response.answers ?? {}).map(([key, answers]) => [
+                            key,
+                            { answers },
+                          ]),
+                        )
+                      : {},
+                }
+              : {
+                  action: response.action,
+                  content: response.action === 'accept' ? (response.content ?? null) : null,
+                  _meta: null,
+                },
+          });
+          if (this.activeTurn === turn && !turn.settled)
+            turn.emit({ type: 'input.resolved', request_id: input.id });
+        },
+      });
+      turn.serverRequests.set(requestId, { id: input.id, kind: 'input' });
+      this.outstandingInputs.set(requestId, { id: input.id, threadId: turn.threadId });
+      turn.emit({
+        type: 'input.required',
+        request_id: input.id,
+        title: input.title,
+        blocking: input.blocking,
+      });
+      return;
+    }
     if (
       method !== 'item/commandExecution/requestApproval' &&
       method !== 'item/fileChange/requestApproval' &&
@@ -955,6 +1044,7 @@ class CodexAppServerClient {
       policyAmendment,
       decide: (decision) => {
         turn.pendingApprovalIds.delete(approval.id);
+        turn.serverRequests.delete(requestId);
         const result = decisionFor(kind, decision, requestParams);
         if (!result) {
           this.send({
@@ -970,6 +1060,7 @@ class CodexAppServerClient {
       },
     });
     turn.pendingApprovalIds.add(approval.id);
+    turn.serverRequests.set(requestId, { id: approval.id, kind: 'approval' });
     turn.emit({
       type: 'approval.required',
       call_id: approval.id,
@@ -983,10 +1074,111 @@ class CodexAppServerClient {
     });
   }
 
+  private matchesTurn(turn: ActiveTurn, params: Record<string, unknown>): boolean {
+    if (typeof params.threadId === 'string' && turn.threadId && params.threadId !== turn.threadId)
+      return false;
+    if (typeof params.turnId === 'string' && turn.turnId && params.turnId !== turn.turnId)
+      return false;
+    const nested = params.turn as { id?: unknown } | undefined;
+    if (nested && typeof nested.id === 'string' && turn.turnId && nested.id !== turn.turnId)
+      return false;
+    return true;
+  }
+
+  private itemState(turn: ActiveTurn, id: string) {
+    let state = turn.items.get(id);
+    if (!state) {
+      state = { text: '', phase: null, completed: false, toolStarted: false };
+      turn.items.set(id, state);
+    }
+    return state;
+  }
+
+  private toolName(item: Record<string, unknown>): string | null {
+    switch (item.type) {
+      case 'commandExecution':
+        return 'shell';
+      case 'fileChange':
+        return 'file_change';
+      case 'mcpToolCall':
+        return `${item.server}/${item.tool}`;
+      case 'dynamicToolCall':
+        return String(item.tool ?? 'dynamic_tool');
+      case 'collabAgentToolCall':
+        return `agent/${item.tool}`;
+      case 'webSearch':
+        return 'web_search';
+      default:
+        return null;
+    }
+  }
+
+  private startTool(turn: ActiveTurn, item: Record<string, unknown>, id: string): void {
+    const tool = this.toolName(item);
+    const state = this.itemState(turn, id);
+    if (!tool || state.toolStarted) return;
+    state.toolStarted = true;
+    turn.emit({
+      type: 'tool.started',
+      call_id: id,
+      tool,
+      args:
+        item.type === 'commandExecution'
+          ? { command: item.command, cwd: item.cwd }
+          : item.type === 'mcpToolCall' || item.type === 'dynamicToolCall'
+            ? { arguments: item.arguments }
+            : item.type === 'fileChange'
+              ? { changes: item.changes }
+              : {
+                  prompt: item.prompt,
+                  receiverThreadIds: item.receiverThreadIds,
+                  agentsStates: item.agentsStates,
+                },
+    });
+  }
+
   private handleNotification(method: string, notificationParams: Record<string, unknown>): void {
+    if (method === 'serverRequest/resolved') {
+      const requestId = notificationParams.requestId as JsonRpcId;
+      const input = this.outstandingInputs.get(requestId);
+      if (input && (!input.threadId || notificationParams.threadId === input.threadId)) {
+        forgetInput(input.id);
+        this.outstandingInputs.delete(requestId);
+        const owner = this.activeTurn;
+        if (owner && this.matchesTurn(owner, notificationParams)) {
+          owner.serverRequests.delete(requestId);
+          owner.emit({ type: 'input.resolved', request_id: input.id });
+        }
+      }
+    }
     const turn = this.activeTurn;
-    if (!turn) return;
+    if (!turn || !this.matchesTurn(turn, notificationParams)) return;
     switch (method) {
+      case 'serverRequest/resolved': {
+        const requestId = notificationParams.requestId as JsonRpcId;
+        const request = turn.serverRequests.get(requestId);
+        if (!request) break;
+        turn.serverRequests.delete(requestId);
+        if (request.kind === 'input') {
+          forgetInput(request.id);
+          turn.emit({ type: 'input.resolved', request_id: request.id });
+        } else {
+          forgetApproval(request.id);
+          turn.pendingApprovalIds.delete(request.id);
+        }
+        break;
+      }
+      case 'item/mcpToolCall/progress': {
+        const message = notificationParams.message;
+        if (typeof message === 'string')
+          turn.emit({
+            type: 'progress.updated',
+            source: 'mcp',
+            summary: message,
+            item_id: itemIdFromParams(notificationParams),
+          });
+        break;
+      }
       case 'turn/started': {
         const startedTurn = notificationParams.turn;
         const threadId = notificationParams.threadId;
@@ -1004,14 +1196,38 @@ class CodexAppServerClient {
 
       case 'item/agentMessage/delta': {
         const delta = notificationParams.delta;
-        if (typeof delta === 'string' && delta) turn.emit({ type: 'text.delta', text: delta });
+        if (typeof delta === 'string' && delta) {
+          const id = itemIdFromParams(notificationParams) ?? 'legacy-message';
+          const state = this.itemState(turn, id);
+          if (state.completed) break;
+          state.text += delta;
+          if (state.phase !== 'commentary')
+            turn.emit({
+              type: 'text.delta',
+              text: delta,
+              item_id: id,
+              phase: state.phase as 'final_answer' | null,
+            });
+          else
+            turn.emit({
+              type: 'progress.updated',
+              source: state.phase === 'commentary' ? 'commentary' : 'message',
+              summary: delta,
+              item_id: id,
+            });
+        }
         break;
       }
 
       case 'item/reasoning/textDelta':
       case 'item/reasoning/summaryTextDelta': {
         const delta = notificationParams.delta;
-        if (typeof delta === 'string' && delta) turn.emit({ type: 'thinking.delta', text: delta });
+        if (typeof delta === 'string' && delta)
+          turn.emit({
+            type: 'thinking.delta',
+            text: delta,
+            item_id: itemIdFromParams(notificationParams),
+          });
         break;
       }
 
@@ -1073,18 +1289,11 @@ class CodexAppServerClient {
         const item = notificationParams.item;
         if (!item || typeof item !== 'object') break;
         const record = item as Record<string, unknown>;
-        if (record.type !== 'commandExecution') break;
-        const id = typeof record.id === 'string' ? record.id : `command-${Date.now()}`;
-        const command = typeof record.command === 'string' ? record.command : '';
-        turn.emit({
-          type: 'tool.started',
-          call_id: id,
-          tool: 'shell',
-          args: {
-            command,
-            cwd: typeof record.cwd === 'string' ? record.cwd : undefined,
-          },
-        });
+        const id = typeof record.id === 'string' ? record.id : 'legacy-message';
+        if (record.type === 'agentMessage') {
+          this.itemState(turn, id).phase = typeof record.phase === 'string' ? record.phase : null;
+        }
+        this.startTool(turn, record, id);
         break;
       }
 
@@ -1092,25 +1301,41 @@ class CodexAppServerClient {
         const item = notificationParams.item;
         if (!item || typeof item !== 'object') break;
         const record = item as Record<string, unknown>;
+        const id = typeof record.id === 'string' ? record.id : 'legacy-message';
+        const state = this.itemState(turn, id);
+        if (state.completed) break;
+        state.completed = true;
         if (record.type === 'agentMessage') {
-          const text = typeof record.text === 'string' ? record.text : '';
-          if (text && text !== turn.finalText) turn.emit({ type: 'text.completed', text });
-        } else if (record.type === 'commandExecution') {
-          const id = typeof record.id === 'string' ? record.id : `command-${Date.now()}`;
+          state.text = typeof record.text === 'string' ? record.text : state.text;
+          state.phase = typeof record.phase === 'string' ? record.phase : state.phase;
+          turn.emit({
+            type: 'progress.updated',
+            source: state.phase === 'commentary' ? 'commentary' : 'message',
+            summary: state.text,
+            item_id: id,
+          });
+        } else if (this.toolName(record)) {
+          this.startTool(turn, record, id);
           const exitCode = typeof record.exitCode === 'number' ? record.exitCode : undefined;
-          const output =
-            typeof record.aggregatedOutput === 'string' ? record.aggregatedOutput : undefined;
           turn.emit({
             type: 'tool.completed',
             call_id: id,
-            tool: 'shell',
-            success: exitCode === undefined || exitCode === 0,
-            result: output,
+            tool: this.toolName(record)!,
+            success:
+              record.status !== 'failed' &&
+              record.status !== 'declined' &&
+              record.success !== false &&
+              !record.error &&
+              (exitCode === undefined || exitCode === 0),
+            result:
+              typeof record.aggregatedOutput === 'string'
+                ? record.aggregatedOutput
+                : compactJson(record.result ?? record.changes ?? record.agentsStates),
             exit_code: exitCode,
             duration_ms: typeof record.durationMs === 'number' ? record.durationMs : undefined,
           });
         } else if (record.type === 'reasoning') {
-          turn.emit({ type: 'thinking.completed' });
+          turn.emit({ type: 'thinking.completed', item_id: id });
         }
         break;
       }
@@ -1128,6 +1353,12 @@ class CodexAppServerClient {
       }
 
       case 'turn/completed': {
+        const messages = [...turn.items.values()].filter(
+          (item) => item.text && item.phase !== 'commentary',
+        );
+        const finals = messages.filter((item) => item.phase === 'final_answer');
+        const text = (finals.length ? finals : messages).map((item) => item.text).join('\n\n');
+        if (text) turn.emit({ type: 'text.completed', text });
         const completedTurn = notificationParams.turn;
         const status =
           completedTurn && typeof completedTurn === 'object'

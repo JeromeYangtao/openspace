@@ -4,6 +4,8 @@
 
 import type {
   Agent,
+  AgentInputRequest,
+  AgentInputResponse,
   AgentActivity,
   AgentContextUsage,
   AgentFeedback,
@@ -629,3 +631,10 @@ export const rejectWorkflowSession = (id: number) =>
 
 export const archiveWorkflowSession = (id: number) =>
   request<WorkflowSession>(`/api/workflow-sessions/${id}/archive`, { method: 'POST' });
+
+export const listAgentInputs = () => request<AgentInputRequest[]>('/api/agent-inputs');
+export const answerAgentInput = (id: string, response: AgentInputResponse) =>
+  request<{ ok: boolean }>(`/api/agent-inputs/${id}/response`, {
+    method: 'POST',
+    body: JSON.stringify(response),
+  });

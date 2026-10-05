@@ -382,6 +382,16 @@ function compactActivityEvents(events: AgentActivityPayload[]): ActivityRow[] {
           text: `${event.tool}${event.exit_code !== undefined ? ` exit=${event.exit_code}` : ''}${event.duration_ms ? ` · ${event.duration_ms}ms` : ''}`,
         });
         break;
+      case 'input.required':
+        rows.push({
+          kind: 'progress',
+          label: event.blocking ? 'waiting' : 'question',
+          text: event.title,
+        });
+        break;
+      case 'input.resolved':
+        rows.push({ kind: 'progress', label: 'input', text: 'Question resolved' });
+        break;
       case 'approval.required':
         rows.push({
           kind: 'approval',

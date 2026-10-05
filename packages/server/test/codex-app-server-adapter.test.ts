@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   isRecoverableCodexErrorNotification,
   shouldDisposeIdleCodexAppServerClient,
-} from '../src/agents/codex-app-server-adapter.js';
+} from '../src/agents/codex/codex-app-server-adapter.js';
 import { isFatalErrorEvent } from '../src/agents/error-classification.js';
 import type { CLIEvent } from '../src/agents/types.js';
 

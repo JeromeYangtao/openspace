@@ -1,4 +1,6 @@
 import type { FastifyInstance } from 'fastify';
+import type { AgentInputRequest, AgentInputResponse } from '@openspace/shared';
+import { getPendingInput, listPendingInputs, resolveInput } from '../agents/input-manager.js';
 import {
   getPendingApproval,
   listPendingApprovals,
@@ -19,6 +21,38 @@ const DECISIONS = new Set<ApprovalDecision>([
 ]);
 
 export async function agentApprovalRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/agent-inputs', async (req, reply) => {
+    const user = getUserFromRequest(req);
+    if (!user) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
+    return listPendingInputs().filter((input) => canUserResolveApproval(input, user));
+  });
+  app.post('/api/agent-inputs/:id/response', async (req, reply) => {
+    const user = getUserFromRequest(req);
+    if (!user) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
+    const { id } = req.params as { id: string };
+    const input = getPendingInput(id);
+    if (!input) {
+      reply.code(404);
+      return { error: 'input request already resolved' };
+    }
+    if (!canUserResolveApproval(input, user)) {
+      reply.code(403);
+      return { error: 'forbidden' };
+    }
+    try {
+      resolveInput(id, req.body as AgentInputResponse);
+    } catch (error) {
+      reply.code(400);
+      return { error: (error as Error).message };
+    }
+    return { ok: true };
+  });
   app.get('/api/agent-approvals', async (req, reply) => {
     const user = getUserFromRequest(req);
     if (!user) {
@@ -44,7 +78,8 @@ export async function agentApprovalRoutes(app: FastifyInstance): Promise<void> {
     if (!decision || !DECISIONS.has(decision)) {
       reply.code(400);
       return {
-        error: 'decision must be approve, approve_for_session, approve_with_policy, reject, or cancel',
+        error:
+          'decision must be approve, approve_for_session, approve_with_policy, reject, or cancel',
       };
     }
 
@@ -68,7 +103,7 @@ export async function agentApprovalRoutes(app: FastifyInstance): Promise<void> {
 }
 
 function canUserResolveApproval(
-  approval: PendingApproval,
+  approval: Pick<PendingApproval | AgentInputRequest, 'channel_id'>,
   user: NonNullable<ReturnType<typeof getUserFromRequest>>,
 ): boolean {
   if (user.role === 'admin') return true;

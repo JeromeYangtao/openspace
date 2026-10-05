@@ -204,3 +204,24 @@ type CLIEvent =
 ---
 
 *本文档由 Phase 0 Spike 验证直接生成，覆盖 2026-04 时点的 CLI 版本。CLI 升级后如事件格式变化，请重跑 `spike/scripts/test-*.sh` 并更新本文档。*
+
+
+## Codex app-server interactions and item lifecycle
+
+OpenSpace handles `item/tool/requestUserInput` and `mcpServer/elicitation/request` through
+input cards, separate from command approvals. Cards support question options/free text,
+MCP primitive forms and URL confirmation, with Submit, Decline and Cancel responses.
+Complex forms expose their requested schema and accept JSON. Verification challenges
+(`openai/userVerification`) require a verification client and cannot be accepted here.
+
+`isBlocking=false` questions stay answerable after the originating turn completes, while
+the app-server remains alive. Blocking requests are canceled when the turn ends. Pending
+cards are removed on `serverRequest/resolved` and process exit. Responses require the
+same channel access as approvals; answer values are not written to activity events.
+
+Notifications are scoped to the active thread/turn. Message text and tool lifecycle state
+are tracked by item ID, so duplicate completion events do not duplicate tool records.
+Commentary appears in the activity timeline; `final_answer` text forms the final message.
+Models without phase metadata retain streaming and aggregate their message items as a
+compatibility fallback. File changes, MCP calls, dynamic tools and Codex collaborator
+calls emit tool start/completion events alongside shell commands.

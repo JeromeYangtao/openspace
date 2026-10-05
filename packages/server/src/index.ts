@@ -52,11 +52,11 @@ import { hub } from './ws/hub.js';
 import { concurrencyQueue } from './agents/queue.js';
 import { recoverInterruptedAgentRuns, snapshotRunManager } from './agents/run-manager.js';
 import { snapshotRunWorker, startRunWorker, stopRunWorker } from './agents/run-worker.js';
-import { snapshotCodexAppServers } from './agents/codex-app-server-adapter.js';
+import { snapshotCodexAppServers } from './agents/codex/codex-app-server-adapter.js';
 import {
   startCodexRuntimeMonitor,
   stopCodexRuntimeMonitor,
-} from './agents/codex-runtime-monitor.js';
+} from './agents/codex/codex-runtime-monitor.js';
 import { projectsService } from './config/projects-service.js';
 import { warmUpAllProjects } from './routes/_helpers.js';
 import { registerStaticDocs } from './static-docs.js';

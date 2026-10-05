@@ -1,3 +1,4 @@
+import { attachInputContext } from './input-manager.js';
 /**
  * AgentEngine — 把 Adapter / Runner / ContextBuilder / ActivityRecorder / Queue 整合起来
  *
@@ -237,6 +238,14 @@ export async function triggerAgent(
       {
         signal,
         onEvent: (event: CLIEvent) => {
+          if (event.type === 'input.required') {
+            attachInputContext(event.request_id, {
+              channel_id: ctx.channelId,
+              agent_id: agent.id,
+              run_id: run.id,
+              message_id: placeholder.id,
+            });
+          }
           if (event.type === 'approval.required' && event.call_id) {
             attachApprovalContext(event.call_id, {
               channel_id: ctx.channelId,
@@ -268,7 +277,8 @@ export async function triggerAgent(
             (event.type === 'text.delta' ||
               event.type === 'thinking.delta' ||
               event.type === 'tool.started' ||
-              event.type === 'approval.required')
+              event.type === 'approval.required' ||
+              event.type === 'input.required')
           ) {
             hasSwitchedToWorking = true;
             agentRunRepo.updateStatus(db, run.id, 'working');

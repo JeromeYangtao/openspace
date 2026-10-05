@@ -18,7 +18,7 @@
 >
 > | 条目 | 状态 | 落地 commit / 说明 |
 > |------|------|--------------------|
-> | `S-1` CursorSdkAdapter 旁路 | ✅ 已落地（Sprint 4-ext） | `packages/server/src/agents/cursor-sdk-adapter.ts` + `adapter-factory.ts`，环境变量 `OPENSPACE_CURSOR_BACKEND=sdk\|cli` 切换 |
+> | `S-1` CursorSdkAdapter 旁路 | ✅ 已落地（Sprint 4-ext） | `packages/server/src/agents/cursor/cursor-sdk-adapter.ts` + `adapter-factory.ts`，环境变量 `OPENSPACE_CURSOR_BACKEND=sdk\|cli` 切换 |
 > | `S-2` SDK 标准 tool_call schema | ✅ 已落地（Sprint 4-ext） | `CursorSdkAdapter.mapSdkMessage()` 直接映射 `SDKToolUseMessage`；`CursorAdapter` 保留旧解析以兼容 cursor-agent 子进程 |
 > | `S-3` summarizeToolArgs Activity 摘要 | ✅ 已落地（Sprint 4-ext） | `packages/server/src/agents/summarize-tool-args.ts` + `activity-recorder.ts` |
 > | `S-4` Subagents 重构 System Agent | ⏸️ 暂缓 | 等 SDK GA + 与 D-1 per-channel 隔离 spike 后再评估 |
@@ -101,7 +101,7 @@ cursor/cookbook/
 **关键代码骨架（示意）**：
 
 ```typescript
-// packages/server/src/agents/cursor-sdk-adapter.ts
+// packages/server/src/agents/cursor/cursor-sdk-adapter.ts
 import { Agent, type SDKMessage } from '@cursor/sdk';
 import type { CLIAdapter, CLIEvent, BuildCommandParams } from './types.js';
 
@@ -456,8 +456,8 @@ type AgentCard = {
 - [`packages/server/src/agents/types.ts`](../packages/server/src/agents/types.ts) — `CLIAdapter` 接口（含 `runDirect?` 钩子，`S-1` 实现入口）
 - [`packages/server/src/agents/runner.ts`](../packages/server/src/agents/runner.ts) — `runWithAdapter()` 统一 dispatcher（spawn-派 / api-direct-派）
 - [`packages/server/src/agents/adapter-factory.ts`](../packages/server/src/agents/adapter-factory.ts) — `createCursorAdapter()`，按 `OPENSPACE_CURSOR_BACKEND` 切换
-- [`packages/server/src/agents/cursor-adapter.ts`](../packages/server/src/agents/cursor-adapter.ts) — 当前 `CursorAdapter`（spawn 子进程派，默认）
-- [`packages/server/src/agents/cursor-sdk-adapter.ts`](../packages/server/src/agents/cursor-sdk-adapter.ts) — `CursorSdkAdapter`（`S-1` + `S-2` 落地点；lazy-import 避免默认启动加载 sqlite3）
+- [`packages/server/src/agents/cursor/cursor-adapter.ts`](../packages/server/src/agents/cursor/cursor-adapter.ts) — 当前 `CursorAdapter`（spawn 子进程派，默认）
+- [`packages/server/src/agents/cursor/cursor-sdk-adapter.ts`](../packages/server/src/agents/cursor/cursor-sdk-adapter.ts) — `CursorSdkAdapter`（`S-1` + `S-2` 落地点；lazy-import 避免默认启动加载 sqlite3）
 - [`packages/server/src/agents/summarize-tool-args.ts`](../packages/server/src/agents/summarize-tool-args.ts) — `S-3` Activity 摘要工具
 - [`packages/server/src/agents/activity-recorder.ts`](../packages/server/src/agents/activity-recorder.ts) — `D-3` Activity 写入点（已接 `summarizeToolArgs`）
 - [`packages/server/scripts/verify-sdk-adapter.ts`](../packages/server/scripts/verify-sdk-adapter.ts) — Smoke 验证脚本（无需 SQLite，可直接 `tsx` 跑）

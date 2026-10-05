@@ -17,9 +17,16 @@ export type CLIEvent =
       detail?: string;
       item_id?: string;
     }
-  | { type: 'thinking.delta'; text: string }
-  | { type: 'thinking.completed' }
-  | { type: 'text.delta'; text: string }
+  | { type: 'input.required'; request_id: string; title: string; blocking: boolean }
+  | { type: 'input.resolved'; request_id: string }
+  | { type: 'thinking.delta'; text: string; item_id?: string }
+  | { type: 'thinking.completed'; item_id?: string }
+  | {
+      type: 'text.delta';
+      text: string;
+      item_id?: string;
+      phase?: 'commentary' | 'final_answer' | null;
+    }
   | { type: 'text.completed'; text: string }
   | {
       type: 'tool.started';

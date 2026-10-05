@@ -11,8 +11,8 @@ import {
 import { canAccessChannel } from '../auth/channel-access.js';
 import { getUserFromRequest } from '../auth/session.js';
 import { abortSingleAgentRun } from '../agents/run-manager.js';
-import { compactCodexThread } from '../agents/codex-app-server-adapter.js';
-import { readCodexSessionContextUsage } from '../agents/codex-session-log.js';
+import { compactCodexThread } from '../agents/codex/codex-app-server-adapter.js';
+import { readCodexSessionContextUsage } from '../agents/codex/codex-session-log.js';
 
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
   // 列出 agent；可选 ?project_id= 过滤

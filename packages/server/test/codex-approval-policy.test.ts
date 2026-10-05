@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import test from 'node:test';
 import { resolveApproval } from '../src/agents/approval-manager.js';
-import { CodexAppServerAdapter } from '../src/agents/codex-app-server-adapter.js';
+import { CodexAppServerAdapter } from '../src/agents/codex/codex-app-server-adapter.js';
 
 // Exercise the actual JSON-RPC transport without executing commands or contacting a model.
 const fakeServer = `#!/usr/bin/env node

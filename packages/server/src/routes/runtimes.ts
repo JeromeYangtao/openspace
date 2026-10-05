@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { RUNTIME_REGISTRY, type Runtime, type RuntimeDetection } from '@openspace/shared';
 import { detectRuntime } from '../runtime-detect.js';
 import { getAdapterFor } from '../agents/engine.js';
-import { listCodexAppServerStatuses } from '../agents/codex-app-server-adapter.js';
+import { listCodexAppServerStatuses } from '../agents/codex/codex-app-server-adapter.js';
 
 export async function runtimesRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/runtimes', async (): Promise<RuntimeDetection[]> => {

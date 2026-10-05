@@ -3,7 +3,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { ContextUsageInfo, TokenUsageBreakdown } from './types.js';
+import type { ContextUsageInfo, TokenUsageBreakdown } from '../types.js';
 
 export interface CodexSessionContextUsage extends ContextUsageInfo {
   session_id: string | null;

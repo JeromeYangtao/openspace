@@ -13,7 +13,7 @@ import type {
   CLIAdapter,
   CLIEvent,
   SpawnSpec,
-} from './types.js';
+} from '../types.js';
 
 const execFileAsync = promisify(execFile);
 

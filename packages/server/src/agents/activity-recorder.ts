@@ -56,6 +56,13 @@ export class ActivityRecorder {
           );
           break;
 
+        case 'input.required':
+          this.append(
+            'working',
+            `${event.blocking ? 'Waiting for input' : 'Input requested'}: ${event.title}`,
+          );
+          break;
+
         case 'approval.required':
           this.append(
             event.supported ? 'working' : 'error',

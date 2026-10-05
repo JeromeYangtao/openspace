@@ -140,9 +140,16 @@ export type AgentActivityPayload =
       detail?: string;
       item_id?: string;
     }
-  | { type: 'thinking.delta'; text: string }
-  | { type: 'thinking.completed' }
-  | { type: 'text.delta'; text: string }
+  | { type: 'input.required'; request_id: string; title: string; blocking: boolean }
+  | { type: 'input.resolved'; request_id: string }
+  | { type: 'thinking.delta'; text: string; item_id?: string }
+  | { type: 'thinking.completed'; item_id?: string }
+  | {
+      type: 'text.delta';
+      text: string;
+      item_id?: string;
+      phase?: 'commentary' | 'final_answer' | null;
+    }
   | { type: 'text.completed'; text: string }
   | {
       type: 'tool.started';
@@ -232,3 +239,35 @@ export type SystemEvent =
       run_id: number;
       status: WorkflowRunStatus;
     };
+
+/** Runtime questions and MCP elicitations. Answers are kept out of activity logs. */
+export interface AgentInputQuestion {
+  id: string;
+  header: string;
+  question: string;
+  isOther: boolean;
+  isSecret: boolean;
+  options: Array<{ label: string; description: string }> | null;
+}
+
+export interface AgentInputRequest {
+  id: string;
+  kind: 'questions' | 'mcp';
+  title: string;
+  blocking: boolean;
+  questions?: AgentInputQuestion[];
+  mode?: string;
+  schema?: Record<string, unknown>;
+  url?: string;
+  channel_id?: string;
+  agent_id?: string;
+  run_id?: number;
+  message_id?: string;
+  createdAt: number;
+}
+
+export interface AgentInputResponse {
+  action: 'accept' | 'decline' | 'cancel';
+  answers?: Record<string, string[]>;
+  content?: unknown;
+}

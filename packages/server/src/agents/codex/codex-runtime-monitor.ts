@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { listCodexAppServerStatuses } from './codex-app-server-adapter.js';
-import { hub } from '../ws/hub.js';
+import { hub } from '../../ws/hub.js';
 
 const DEFAULT_INTERVAL_MS = 10_000;
 

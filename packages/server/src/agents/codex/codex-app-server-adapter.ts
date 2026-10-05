@@ -1201,20 +1201,20 @@ class CodexAppServerClient {
           const state = this.itemState(turn, id);
           if (state.completed) break;
           state.text += delta;
-          if (state.phase !== 'commentary')
-            turn.emit({
-              type: 'text.delta',
-              text: delta,
-              item_id: id,
-              phase: state.phase as 'final_answer' | null,
-            });
-          else
+          turn.emit({
+            type: 'text.delta',
+            text: delta,
+            item_id: id,
+            phase: state.phase as 'commentary' | 'final_answer' | null,
+          });
+          if (state.phase === 'commentary') {
             turn.emit({
               type: 'progress.updated',
-              source: state.phase === 'commentary' ? 'commentary' : 'message',
+              source: 'commentary',
               summary: delta,
               item_id: id,
             });
+          }
         }
         break;
       }

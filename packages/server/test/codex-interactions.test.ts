@@ -94,11 +94,22 @@ async function runScenario(scenario: string, onEvent?: (event: CLIEvent) => void
 }
 
 test(
-  'isolates turns, separates commentary and final text, and maps tool lifecycles once',
+  'streams commentary, replaces it with final text, isolates turns, and deduplicates tools',
   { timeout: 5000 },
   async () => {
     const { result, root } = await runScenario('events');
     try {
+      const deltas = result.events.filter((event) => event.type === 'text.delta');
+      assert.deepEqual(
+        deltas.map((event) => ({ text: event.text, phase: event.phase })),
+        [
+          { text: 'Working', phase: 'commentary' },
+          { text: 'Answer', phase: 'final_answer' },
+        ],
+      );
+      const final = result.events.find((event) => event.type === 'text.completed');
+      assert.equal(final?.text, 'Answer');
+      assert.ok(result.events.indexOf(final!) > result.events.indexOf(deltas[1]!));
       assert.equal(result.fullText, 'Answer');
       assert.equal(result.exitCode, 0);
       assert.equal(result.events.filter((event) => event.type === 'text.completed').length, 1);

@@ -221,7 +221,8 @@ same channel access as approvals; answer values are not written to activity even
 
 Notifications are scoped to the active thread/turn. Message text and tool lifecycle state
 are tracked by item ID, so duplicate completion events do not duplicate tool records.
-Commentary appears in the activity timeline; `final_answer` text forms the final message.
+Commentary streams into the message body and also appears in the activity timeline.
+When the turn completes, `final_answer` text replaces the streamed body, excluding commentary.
 Models without phase metadata retain streaming and aggregate their message items as a
 compatibility fallback. File changes, MCP calls, dynamic tools and Codex collaborator
 calls emit tool start/completion events alongside shell commands.

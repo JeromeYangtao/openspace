@@ -1,3 +1,4 @@
+import { GoalsPanel } from '../components/GoalsPanel';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { ChatMessage } from '@openspace/shared';
@@ -203,14 +204,17 @@ export function ChannelPage() {
     () => allAgents.filter((a) => channelAgentIdSet.has(a.id)),
     [allAgents, channelAgentIdSet],
   );
-  const findMentionedAgentName = useCallback((content: string) => {
-    for (const agent of channelAgents) {
-      const escaped = agent.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const re = new RegExp(`(^|[^\\w@])@${escaped}(?=$|[^A-Za-z0-9_\\-\\u4e00-\\u9fa5])`);
-      if (re.test(content)) return agent.name;
-    }
-    return null;
-  }, [channelAgents]);
+  const findMentionedAgentName = useCallback(
+    (content: string) => {
+      for (const agent of channelAgents) {
+        const escaped = agent.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`(^|[^\\w@])@${escaped}(?=$|[^A-Za-z0-9_\\-\\u4e00-\\u9fa5])`);
+        if (re.test(content)) return agent.name;
+      }
+      return null;
+    },
+    [channelAgents],
+  );
   const rememberedAgentName = channelId ? rememberedAgentByChannel[channelId] : undefined;
   const defaultMessageValue =
     rememberedAgentName && channelAgents.some((a) => a.name === rememberedAgentName)
@@ -250,10 +254,7 @@ export function ChannelPage() {
     );
   }
 
-  if (
-    !channel &&
-    (channelLookup.channelId !== channelId || channelLookup.status !== 'not_found')
-  ) {
+  if (!channel && (channelLookup.channelId !== channelId || channelLookup.status !== 'not_found')) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-secondary font-mono">
         Loading…
@@ -307,6 +308,7 @@ export function ChannelPage() {
       channel_id: channelId,
       content,
       as_task: opts?.asTask,
+      client_request_id: crypto.randomUUID(),
     });
     if (sent) scheduleChannelRefresh(channelId, 700);
     return sent;
@@ -360,6 +362,9 @@ export function ChannelPage() {
           }
         />
         <ActiveAgentsBanner channelId={channelId} />
+        {channel.project_id && (
+          <GoalsPanel projectId={channel.project_id} channelId={channelId} agents={channelAgents} />
+        )}
         {chatTab === 'tasks' ? (
           <TasksPanel channelId={channelId} agents={allAgents} />
         ) : (
@@ -372,9 +377,7 @@ export function ChannelPage() {
               hasMore={hasMoreMessages}
               loadingMore={loadingOlderMessages}
               onLoadMore={
-                channelId
-                  ? (beforeMessageId) => fetchBefore(channelId, beforeMessageId)
-                  : undefined
+                channelId ? (beforeMessageId) => fetchBefore(channelId, beforeMessageId) : undefined
               }
               onOpenThread={openThread}
               onOpenAgentProfile={openAgentProfile}

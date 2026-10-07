@@ -18,14 +18,18 @@ interface ActiveRun {
   heartbeat: ReturnType<typeof setInterval>;
 }
 
-const activeRuns = new Map<number, ActiveRun>();
+const activeRuns = new Map<string, ActiveRun>();
+
+function runKey(db: Database, id: number): string {
+  return `${db.name}:${id}`;
+}
 
 export function serverInstanceId(): string {
   return SERVER_INSTANCE_ID;
 }
 
 export function registerAgentRun(db: Database, runId: number): AbortSignal {
-  const existing = activeRuns.get(runId);
+  const existing = activeRuns.get(runKey(db, runId));
   if (existing) {
     return existing.aborter.signal;
   }
@@ -41,20 +45,20 @@ export function registerAgentRun(db: Database, runId: number): AbortSignal {
   }, HEARTBEAT_INTERVAL_MS);
   heartbeat.unref();
 
-  activeRuns.set(runId, { db, aborter, heartbeat });
+  activeRuns.set(runKey(db, runId), { db, aborter, heartbeat });
   return aborter.signal;
 }
 
-export function completeAgentRun(runId: number): void {
-  const active = activeRuns.get(runId);
+export function completeAgentRun(db: Database, runId: number): void {
+  const active = activeRuns.get(runKey(db, runId));
   if (!active) return;
   clearInterval(active.heartbeat);
-  activeRuns.delete(runId);
+  activeRuns.delete(runKey(db, runId));
 }
 
 /** 中止指定 agent_run。返回是否真的有当前进程托管的 worker 被发了 abort 信号。 */
-export function abortAgentRun(agentRunId: number): boolean {
-  const active = activeRuns.get(agentRunId);
+export function abortAgentRun(db: Database, agentRunId: number): boolean {
+  const active = activeRuns.get(runKey(db, agentRunId));
   if (!active) return false;
   try {
     active.aborter.abort();
@@ -68,7 +72,7 @@ export function abortSingleAgentRun(db: Database, agentRunId: number): boolean {
   const run = agentRunRepo.getById(db, agentRunId);
   if (!run || run.ended_at !== null) return false;
 
-  const aborted = abortAgentRun(agentRunId);
+  const aborted = abortAgentRun(db, agentRunId);
   if (!aborted) {
     agentRunRepo.stop(db, agentRunId, 'stopped: no active worker in this server');
   }
@@ -86,7 +90,7 @@ export function abortAgentRunsInChannel(
     .filter((run) => run.agent_id === agentId);
   let count = 0;
   for (const run of runs) {
-    if (abortAgentRun(run.id)) {
+    if (abortAgentRun(db, run.id)) {
       count += 1;
       continue;
     }
@@ -106,7 +110,7 @@ export function abortChannelAgentRuns(db: Database, channelId: string): number {
   const runs = agentRunRepo.listActiveInChannel(db, channelId);
   let count = 0;
   for (const run of runs) {
-    if (abortAgentRun(run.id)) {
+    if (abortAgentRun(db, run.id)) {
       count += 1;
       continue;
     }
@@ -118,7 +122,10 @@ export function abortChannelAgentRuns(db: Database, channelId: string): number {
 }
 
 export function recoverInterruptedAgentRuns(options?: {
-  logger?: { info: (obj: unknown, msg?: string) => void; warn: (obj: unknown, msg?: string) => void };
+  logger?: {
+    info: (obj: unknown, msg?: string) => void;
+    warn: (obj: unknown, msg?: string) => void;
+  };
 }): { stopped: number } {
   let stopped = 0;
   for (const open of listOpenDbs()) {
@@ -136,10 +143,7 @@ export function recoverInterruptedAgentRuns(options?: {
     }
   }
   if (stopped > 0) {
-    options?.logger?.info(
-      { stopped },
-      '[run-manager] recovered interrupted agent runs',
-    );
+    options?.logger?.info({ stopped }, '[run-manager] recovered interrupted agent runs');
   }
   return { stopped };
 }

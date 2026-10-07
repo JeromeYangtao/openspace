@@ -224,3 +224,15 @@ git commit -m "feat(scope): your concise message"
 git push origin feat/your-feature
 # → 在 GitHub 上提 PR
 ```
+
+### Goal 持续执行（test 分支）
+
+在频道中发送 `/goal <目标>`，或指定负责人 `@agent /goal <目标>`。首版支持频道内的 Codex Agent；多个可用 Agent 时会打开负责人选择表单。单独发送 `/goal` 打开创建表单，也可点击频道 Goals 区域的“新建 Goal”。
+
+Goal 在专属线程里执行，未完成自动继续，完成候选经过单独验证轮后才结束。卡片显示负责人、验收进度、轮数、累计运行时间及停止原因；点击“打开线程”查看执行回复，点击目标查看要求、证据与执行记录。
+
+追加要求有三种方式：在 Goal 线程直接发消息、点击卡片“补充要求”，或使用 `/goal-update <goal-id> <补充要求>`（在线程可省略 id）。运行中的 Goal 会先停止旧轮次，再按新要求继续；已暂停的 Goal 只保存要求，点击“继续”后恢复。使用 `/comment` 发送不影响执行的旁注。
+
+支持 `/goal-status`、`/goal-pause`、`/goal-resume`、`/goal-cancel`；线程外存在多个 Goal 时需指定 id。默认总额度 20 轮、60 分钟累计运行时间，等待审批/输入不计时；额度用尽后在“继续”表单增加总额度。暂停或取消不会回滚已产生的修改。服务重启后，不确定是否完成的旧轮次暂停，待用户恢复，避免重复外部操作。
+
+`OPENSPACE_GOALS_ENABLED=false` 可关闭新建并暂停已有执行。每个 OpenSpace home 只允许一个调度服务进程，相同 workspace 的 Goal 串行执行。Goal 与项目设置的 Goal 字段独立；同名 Workflow 命令冲突需更名，也可通过表单创建。完成证据由 Agent 提供并在验证轮复核，不等同于人工代码审查。

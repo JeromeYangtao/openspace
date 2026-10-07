@@ -20,12 +20,21 @@ export function useChannelCommands(
   return useMemo(() => {
     const channel = channelId ? channels.find((c) => c.id === channelId) : null;
     const projectId = channel?.project_id ?? null;
-    const wfs = projectId ? workflowsByProject.get(projectId) ?? [] : [];
+    const wfs = projectId ? (workflowsByProject.get(projectId) ?? []) : [];
 
     const hints: CommandHint[] = wfs.map((w) => ({
       name: w.trigger_command,
       description: w.description ?? w.name,
     }));
+
+    hints.push(
+      ...['/goal', '/goal-status', '/goal-pause', '/goal-resume', '/goal-cancel', '/goal-update']
+        .filter((name) => !hints.some((h) => h.name === name))
+        .map((name) => ({
+          name,
+          description: name === '/goal' ? '创建持续执行的目标' : '管理 Goal',
+        })),
+    );
 
     if (inThread) {
       hints.push({ name: '/approve', description: 'Approve current step' });

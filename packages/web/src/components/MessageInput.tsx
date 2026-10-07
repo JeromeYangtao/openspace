@@ -71,7 +71,7 @@ export function MessageInput({
   // 当且仅当：第一行以 / 开头 + commands 非空 + 用户没按 Esc 关闭
   const hintQuery = useMemo(() => {
     if (commands.length === 0) return null;
-    const firstLine = value.split('\n')[0] ?? '';
+    const firstLine = (value.split('\n')[0] ?? '').replace(/^@[A-Za-z0-9_\-\u4e00-\u9fa5]+\s+/, '');
     if (!firstLine.startsWith('/')) return null;
     // 已有空格 → 用户在输入参数，关闭提示
     if (firstLine.includes(' ')) return null;
@@ -156,7 +156,11 @@ export function MessageInput({
   const applyHint = (cmd: CommandHint) => {
     // 替换第一行的 query 为完整 cmd，保留剩余行
     const [, ...rest] = value.split('\n');
-    const next = `${cmd.name} ${rest.length ? '\n' + rest.join('\n') : ''}`.replace(/\s+$/, ' ');
+    const prefix = /^@[A-Za-z0-9_\-\u4e00-\u9fa5]+\s+/.exec(value)?.[0] ?? '';
+    const next = `${prefix}${cmd.name} ${rest.length ? '\n' + rest.join('\n') : ''}`.replace(
+      /\s+$/,
+      ' ',
+    );
     setValue(next);
     setTimeout(() => {
       ref.current?.focus();

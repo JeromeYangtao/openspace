@@ -1,3 +1,4 @@
+import { visibleGoalText, GoalTextStream } from '../goals/report.js';
 import { attachInputContext } from './input-manager.js';
 /**
  * AgentEngine — 把 Adapter / Runner / ContextBuilder / ActivityRecorder / Queue 整合起来
@@ -55,6 +56,13 @@ export function getAdapterFor(runtime: Runtime): CLIAdapter | null {
 
 export interface TriggerContext {
   channelId: string;
+  goal?: {
+    id: string;
+    iterationId: string;
+    prompt: string;
+    signal: AbortSignal;
+    onEvent: (event: CLIEvent) => void;
+  };
   /** 触发消息（用户发的那条，或上游 agent 回复） */
   triggerMessage: ChatMessage;
   /** 可选：thread 根消息 id（如果回复应放进 thread） */
@@ -66,6 +74,7 @@ export interface TriggerContext {
 export interface TriggerResult {
   agentReplyMessage: ChatMessage;
   fullText: string;
+  goalReportText?: string;
   duration_ms: number;
   ok: boolean;
   errorMessage?: string;
@@ -124,7 +133,9 @@ export async function triggerAgent(
 
   // 1. Runtime session 已复用上下文；这里只发送本次触发消息，避免重复注入历史/团队/知识。
   const project = resolveProjectFromDb(db);
-  const prompt = buildSessionTurnPrompt(ctx.triggerMessage, agent.name);
+  const prompt = ctx.goal
+    ? `${agent.description ?? ''}\nProject background: ${project?.goal ?? ''}\nTeam rules: ${project?.team_rules ?? ''}\n${ctx.goal.prompt}`
+    : buildSessionTurnPrompt(ctx.triggerMessage, agent.name);
 
   log.info(
     `[engine] triggering ${agent.name} (chain_depth=${ctx.chainDepth ?? 0}, session_reuse=true)`,
@@ -161,7 +172,13 @@ export async function triggerAgent(
     status: 'thinking',
     server_instance_id: serverInstanceId(),
   });
-  const signal = registerAgentRun(db, run.id);
+  const runSignal = registerAgentRun(db, run.id);
+  const signal = ctx.goal ? AbortSignal.any([runSignal, ctx.goal.signal]) : runSignal;
+  if (ctx.goal)
+    db.prepare('UPDATE goal_iterations SET agent_run_id=? WHERE id=?').run(
+      run.id,
+      ctx.goal.iterationId,
+    );
   broadcastAgentStatus(agent.id, 'thinking', ctx.channelId);
   broadcastAgentActivity(ctx.channelId, agent.id, run.id, placeholder.id, {
     type: 'run.status',
@@ -176,7 +193,7 @@ export async function triggerAgent(
   } catch (e) {
     const errMsg = (e as Error).message;
     log.warn(`[engine] resolveCwd failed: ${errMsg}`);
-    completeAgentRun(run.id);
+    completeAgentRun(db, run.id);
     agentRunRepo.end(db, run.id, errMsg);
     broadcastAgentStatus(agent.id, 'error', ctx.channelId);
     finalizeError(db, placeholder, errMsg);
@@ -201,6 +218,7 @@ export async function triggerAgent(
     detail: `Starting ${agent.runtime}${agent.model ? ` (${agent.model})` : ''}`,
   });
 
+  const goalStream = new GoalTextStream();
   let streamedChars = 0;
   let hasSwitchedToWorking = false;
 
@@ -218,14 +236,22 @@ export async function triggerAgent(
         permissive: true,
         resumeSessionId:
           agent.runtime === 'codex'
-            ? runtimeSessionRepo.get(db, {
-                runtime: agent.runtime,
-                agent_id: agent.id,
-                channel_id: ctx.channelId,
-              })
+            ? ctx.goal
+              ? ((
+                  db
+                    .prepare('SELECT session_id FROM goal_runtime_sessions WHERE goal_id=?')
+                    .get(ctx.goal.id) as { session_id: string } | undefined
+                )?.session_id ?? null)
+              : runtimeSessionRepo.get(db, {
+                  runtime: agent.runtime,
+                  agent_id: agent.id,
+                  channel_id: ctx.channelId,
+                })
             : null,
         codexAppServerKey:
-          agent.runtime === 'codex' ? `${cwd}:${agent.id}:${ctx.channelId}` : undefined,
+          agent.runtime === 'codex'
+            ? `${cwd}:${agent.id}:${ctx.channelId}${ctx.goal ? `:goal:${ctx.goal.id}` : ''}`
+            : undefined,
         codexAppServerMeta:
           agent.runtime === 'codex'
             ? {
@@ -238,6 +264,7 @@ export async function triggerAgent(
       {
         signal,
         onEvent: (event: CLIEvent) => {
+          ctx.goal?.onEvent(event);
           if (event.type === 'input.required') {
             attachInputContext(event.request_id, {
               channel_id: ctx.channelId,
@@ -260,15 +287,22 @@ export async function triggerAgent(
             agent.id,
             run.id,
             placeholder.id,
-            toAgentActivityPayload(event),
+            ctx.goal && (event.type === 'text.completed' || event.type === 'text.delta')
+              ? { ...event, text: event.type === 'text.delta' ? '' : visibleGoalText(event.text) }
+              : toAgentActivityPayload(event),
           );
           if (event.type === 'session.started' && agent.runtime === 'codex') {
-            runtimeSessionRepo.upsert(db, {
-              runtime: agent.runtime,
-              agent_id: agent.id,
-              channel_id: ctx.channelId,
-              session_id: event.session_id,
-            });
+            if (ctx.goal)
+              db.prepare(
+                'INSERT INTO goal_runtime_sessions(goal_id,session_id) VALUES(?,?) ON CONFLICT(goal_id) DO UPDATE SET session_id=excluded.session_id',
+              ).run(ctx.goal.id, event.session_id);
+            else
+              runtimeSessionRepo.upsert(db, {
+                runtime: agent.runtime,
+                agent_id: agent.id,
+                channel_id: ctx.channelId,
+                session_id: event.session_id,
+              });
           }
 
           // 状态切换：首个 text/thinking/tool/approval 事件 → working
@@ -291,7 +325,7 @@ export async function triggerAgent(
             hub.broadcast(ctx.channelId, {
               type: 'message_stream',
               message_id: placeholder.id,
-              delta: event.text,
+              delta: ctx.goal ? goalStream.push(event.text) : event.text,
             });
           }
 
@@ -311,7 +345,7 @@ export async function triggerAgent(
   );
 
   // 进程已退出（正常或被 abort），可以解除当前 server 的控制句柄
-  completeAgentRun(run.id);
+  completeAgentRun(db, run.id);
 
   // 6. 队列满
   if (!runResult.ok) {
@@ -333,7 +367,10 @@ export async function triggerAgent(
   const fullText = result.fullText.trim();
   const hasFatalError = result.events.some(isFatalErrorEvent);
   const finalOk =
-    !result.timedOut && !hasFatalError && (result.exitCode === 0 || result.exitCode === null);
+    !result.aborted &&
+    !result.timedOut &&
+    !hasFatalError &&
+    (result.exitCode === 0 || result.exitCode === null);
 
   // 7. 更新占位消息的最终 content / metadata
   const finalMetadata: MessageMetadata = {
@@ -372,7 +409,8 @@ export async function triggerAgent(
   }
 
   const finalContent =
-    fullText || (finalOk ? '(no response)' : 'Agent failed to produce a response.');
+    (ctx.goal ? visibleGoalText(fullText) : fullText) ||
+    (finalOk ? '(no response)' : 'Agent failed to produce a response.');
   messageRepo.updateContent(db, placeholder.id, finalContent, finalMetadata);
   const updated = messageRepo.getById(db, placeholder.id) ?? placeholder;
 
@@ -408,9 +446,19 @@ export async function triggerAgent(
   return {
     agentReplyMessage: updated,
     fullText: finalContent,
+    goalReportText: ctx.goal ? fullText : undefined,
     duration_ms: result.duration_ms,
     ok: finalOk,
-    errorMessage: finalOk ? undefined : 'Agent responded with error',
+    errorMessage: finalOk
+      ? undefined
+      : result.aborted
+        ? 'aborted'
+        : result.timedOut
+          ? 'timeout'
+          : result.events
+              .filter(isFatalErrorEvent)
+              .map((e) => e.message)
+              .join('; ') || 'Agent responded with error',
   };
 }
 

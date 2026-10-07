@@ -1,3 +1,5 @@
+import { GoalsPanel } from './GoalsPanel';
+import { useChannelsStore } from '../stores/channels';
 /**
  * Thread Panel — 右侧第 3 栏
  * 参考: docs/ui-reference/screenshots/50-thread-panel-desktop.png
@@ -27,6 +29,7 @@ interface Props {
 }
 
 export function ThreadPanel({ channelId }: Props) {
+  const channel = useChannelsStore((s) => s.channels.find((c) => c.id === channelId));
   const [params, setParams] = useSearchParams();
   const threadId = params.get('thread');
   const agents = useAgentsStore((s) => s.agents);
@@ -130,6 +133,7 @@ export function ThreadPanel({ channelId }: Props) {
       type: 'send_message',
       channel_id: channelId,
       thread_id: threadId,
+      client_request_id: crypto.randomUUID(),
       content,
     });
   };
@@ -152,9 +156,7 @@ export function ThreadPanel({ channelId }: Props) {
       <header className="border-b-2 border-black bg-bg-card px-4 py-3 flex items-center gap-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <span className="font-bold">Thread</span>
-          {rootLabel && (
-            <span className="text-text-secondary text-sm truncate">— {rootLabel}</span>
-          )}
+          {rootLabel && <span className="text-text-secondary text-sm truncate">— {rootLabel}</span>}
         </div>
         <button
           className="w-8 h-8 flex items-center justify-center border-2 border-black rounded hover:bg-accent-yellow"
@@ -162,13 +164,28 @@ export function ThreadPanel({ channelId }: Props) {
           aria-label="Close thread"
           title="Close thread"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </button>
       </header>
 
+      {channel?.project_id && (
+        <GoalsPanel
+          projectId={channel.project_id}
+          channelId={channelId}
+          agents={agents}
+          threadId={threadId}
+        />
+      )}
       <ActiveAgentsBanner channelId={channelId} />
       <WorkflowProgress channelId={channelId} threadId={threadId} />
 

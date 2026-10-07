@@ -1,3 +1,4 @@
+import type { Goal } from './goals.js';
 /**
  * WebSocket 消息协议（对齐 MVP WebSocket + Workflow Progress 事件）
  */
@@ -24,6 +25,7 @@ export type ClientEvent =
       content: string;
       /** 发送后自动创建一个 task 引用此消息 */
       as_task?: boolean;
+      client_request_id?: string;
     }
   | { type: 'typing_start'; channel_id: string }
   | { type: 'typing_stop'; channel_id: string }
@@ -33,6 +35,15 @@ export type ClientEvent =
 // Server → Client
 // =============================================================================
 export type ServerEvent =
+  | { type: 'goal.updated'; goal: Goal }
+  | {
+      type: 'goal.compose_required';
+      channel_id: string;
+      thread_id?: string;
+      objective: string;
+      agent_id?: string;
+      user_id: string;
+    }
   | { type: 'message'; message: ChatMessage }
   | { type: 'message_stream'; message_id: string; delta: string }
   | AgentActivityEvent
@@ -142,6 +153,7 @@ export type AgentActivityPayload =
     }
   | { type: 'input.required'; request_id: string; title: string; blocking: boolean }
   | { type: 'input.resolved'; request_id: string }
+  | { type: 'approval.resolved'; call_id: string }
   | { type: 'thinking.delta'; text: string; item_id?: string }
   | { type: 'thinking.completed'; item_id?: string }
   | {

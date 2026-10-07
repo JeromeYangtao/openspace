@@ -1,13 +1,16 @@
+import { pauseChannelGoals } from '../goals/service.js';
 import type { FastifyInstance } from 'fastify';
 import type { ReasoningEffort, Runtime } from '@openspace/shared';
-import { agentRepo, agentRunRepo, activityRepo, runtimeSessionRepo, workflowRepo } from '../db/repos.js';
+import {
+  agentRepo,
+  agentRunRepo,
+  activityRepo,
+  runtimeSessionRepo,
+  workflowRepo,
+} from '../db/repos.js';
 import { deriveResponsibilitiesForWorkflow } from '../workflows/derive-responsibilities.js';
 import { projectsService } from '../config/projects-service.js';
-import {
-  dbForProjectId,
-  dbForResource,
-  forEachProjectDb,
-} from './_helpers.js';
+import { dbForProjectId, dbForResource, forEachProjectDb } from './_helpers.js';
 import { canAccessChannel } from '../auth/channel-access.js';
 import { getUserFromRequest } from '../auth/session.js';
 import { abortSingleAgentRun } from '../agents/run-manager.js';
@@ -56,6 +59,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       reply.code(403);
       return { error: 'forbidden' };
     }
+    if (run) pauseChannelGoals(ctx.db, run.channel_id, run.agent_id, 'run_stopped');
     const stopped = abortSingleAgentRun(ctx.db, runId);
     return { ok: true, stopped };
   });

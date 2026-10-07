@@ -371,3 +371,44 @@ CREATE TABLE IF NOT EXISTS workflow_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_created ON workflow_sessions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON workflow_sessions(status);
+
+-- Goals are durable execution objectives, independent of project.goal.
+CREATE TABLE IF NOT EXISTS goals (
+ id TEXT PRIMARY KEY, channel_id TEXT NOT NULL REFERENCES channels(id),
+ thread_root_id TEXT NOT NULL REFERENCES messages(id), agent_id TEXT NOT NULL REFERENCES agents(id),
+ created_by TEXT NOT NULL, objective TEXT NOT NULL, requirements_json TEXT NOT NULL,
+ criteria_json TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN
+ ('queued','running','verifying','awaiting_input','awaiting_approval','pausing','paused','cancelling','completed','cancelled','failed')),
+ reason TEXT, summary TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 1,
+ generation INTEGER NOT NULL DEFAULT 1, requirements_revision INTEGER NOT NULL DEFAULT 1,
+ rounds_used INTEGER NOT NULL DEFAULT 0, max_rounds INTEGER NOT NULL DEFAULT 20,
+ active_ms INTEGER NOT NULL DEFAULT 0, max_active_ms INTEGER NOT NULL DEFAULT 3600000,
+ no_progress INTEGER NOT NULL DEFAULT 0, invalid_reports INTEGER NOT NULL DEFAULT 0,
+ created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_goal_thread_active ON goals(thread_root_id)
+ WHERE status NOT IN ('completed','cancelled');
+CREATE TABLE IF NOT EXISTS goal_iterations (
+ id TEXT PRIMARY KEY, goal_id TEXT NOT NULL REFERENCES goals(id),
+ sequence INTEGER NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('plan','execute','verify','repair')),
+ generation INTEGER NOT NULL, requirements_revision INTEGER NOT NULL,
+ status TEXT NOT NULL CHECK(status IN ('queued','running','done','failed','cancelled','interrupted')),
+ agent_run_id INTEGER, reply_message_id TEXT, report_json TEXT, error TEXT,
+ started_at INTEGER, ended_at INTEGER, active_ms INTEGER NOT NULL DEFAULT 0,
+ session_id TEXT, UNIQUE(goal_id,sequence)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_goal_iteration_active ON goal_iterations(goal_id)
+ WHERE status IN ('queued','running');
+CREATE TABLE IF NOT EXISTS goal_runtime_sessions (
+ goal_id TEXT PRIMARY KEY REFERENCES goals(id), session_id TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS goal_events (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, goal_id TEXT NOT NULL REFERENCES goals(id),
+ version INTEGER NOT NULL, actor_id TEXT, type TEXT NOT NULL, payload_json TEXT NOT NULL,
+ created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS goal_requests (
+ channel_id TEXT NOT NULL, user_id TEXT NOT NULL, client_request_id TEXT NOT NULL,
+ goal_id TEXT NOT NULL REFERENCES goals(id), operation TEXT NOT NULL,
+ PRIMARY KEY(channel_id,user_id,client_request_id)
+);

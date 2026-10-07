@@ -38,7 +38,7 @@ const SCHEMA_CANDIDATES = [
 ];
 const SCHEMA_PATH = SCHEMA_CANDIDATES.find((p) => existsSync(p));
 
-const PER_PROJECT_SCHEMA_VERSION = '6';
+const PER_PROJECT_SCHEMA_VERSION = '7';
 const POOL_MAX = 20;
 const IDLE_CLOSE_MS = 30 * 60 * 1000; // 30 min
 
@@ -46,6 +46,7 @@ interface PoolEntry {
   db: DB;
   workspacePath: string;
   lastUsed: number;
+  pins: number;
 }
 
 const pool = new Map<string, PoolEntry>();
@@ -99,7 +100,7 @@ export function openProjectDb(workspacePath: string): DB {
     }
   }
 
-  pool.set(norm, { db, workspacePath: norm, lastUsed: Date.now() });
+  pool.set(norm, { db, workspacePath: norm, lastUsed: Date.now(), pins: 0 });
   evictIfNeeded();
   return db;
 }
@@ -108,12 +109,24 @@ export function closeProjectDb(workspacePath: string): void {
   const norm = normalizePath(workspacePath);
   const entry = pool.get(norm);
   if (!entry) return;
+  if (entry.pins > 0) throw new Error('Project has active executions; stop them before closing');
   try {
     entry.db.close();
   } catch {
     /* ignore */
   }
   pool.delete(norm);
+}
+
+/** Keep an executing project's handle out of LRU/idle eviction. */
+export function pinProjectDb(db: DB): () => void {
+  const entry = [...pool.values()].find((e) => e.db === db);
+  if (!entry) return () => {};
+  entry.pins += 1;
+  return () => {
+    entry.pins = Math.max(0, entry.pins - 1);
+    entry.lastUsed = Date.now();
+  };
 }
 
 /** 全局视图聚合用：列出所有当前打开的 (path, db)。不会触发懒加载。*/
@@ -133,6 +146,7 @@ export function listOpenDbs(): Array<{ workspacePath: string; db: DB }> {
  */
 export function findDbByResource(
   table:
+    | 'goals'
     | 'channels'
     | 'agents'
     | 'agent_runs'
@@ -287,6 +301,7 @@ function evictIfNeeded(): void {
   // 找 lastUsed 最早的 entry 淘汰
   let oldest: PoolEntry | null = null;
   for (const e of pool.values()) {
+    if (e.pins > 0) continue;
     if (!oldest || e.lastUsed < oldest.lastUsed) oldest = e;
   }
   if (oldest) closeProjectDb(oldest.workspacePath);
@@ -296,7 +311,7 @@ function evictIfNeeded(): void {
 setInterval(() => {
   const now = Date.now();
   for (const [path, entry] of pool.entries()) {
-    if (now - entry.lastUsed > IDLE_CLOSE_MS) {
+    if (entry.pins === 0 && now - entry.lastUsed > IDLE_CLOSE_MS) {
       try {
         entry.db.close();
       } catch {

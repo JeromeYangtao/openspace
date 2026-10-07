@@ -19,6 +19,7 @@ export type CLIEvent =
     }
   | { type: 'input.required'; request_id: string; title: string; blocking: boolean }
   | { type: 'input.resolved'; request_id: string }
+  | { type: 'approval.resolved'; call_id: string }
   | { type: 'thinking.delta'; text: string; item_id?: string }
   | { type: 'thinking.completed'; item_id?: string }
   | {

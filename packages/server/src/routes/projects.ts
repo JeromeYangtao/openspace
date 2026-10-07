@@ -1,3 +1,4 @@
+import { pauseChannelGoals } from '../goals/service.js';
 /**
  * Projects REST API（D-21 重构）
  *
@@ -220,6 +221,18 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       reply.code(404);
       return { error: 'project not found' };
     }
+    const goalDb = openProjectDb(p.workspace_path);
+    const goalChannels = goalDb
+      .prepare(
+        "SELECT DISTINCT channel_id FROM goals WHERE status NOT IN ('completed','cancelled')",
+      )
+      .all() as { channel_id: string }[];
+    for (const channel of goalChannels)
+      pauseChannelGoals(goalDb, channel.channel_id, undefined, 'project_closed');
+    if (goalDb.prepare("SELECT 1 FROM goal_iterations WHERE status='running'").get()) {
+      reply.code(409);
+      return { error: 'Goal 正在停止，请稍后重试' };
+    }
     closeProjectDb(p.workspace_path);
     projectsService.close(id);
     hub.broadcastGlobal({ type: 'project_list_changed', reason: 'closed' });
@@ -240,6 +253,18 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       return {
         error: `confirm_name must equal "${p.name}" to delete this project's .openspace/ storage`,
       };
+    }
+    const goalDb = openProjectDb(p.workspace_path);
+    const goalChannels = goalDb
+      .prepare(
+        "SELECT DISTINCT channel_id FROM goals WHERE status NOT IN ('completed','cancelled')",
+      )
+      .all() as { channel_id: string }[];
+    for (const channel of goalChannels)
+      pauseChannelGoals(goalDb, channel.channel_id, undefined, 'project_closed');
+    if (goalDb.prepare("SELECT 1 FROM goal_iterations WHERE status='running'").get()) {
+      reply.code(409);
+      return { error: 'Goal 正在停止，请稍后重试' };
     }
     closeProjectDb(p.workspace_path);
     projectsService.deleteStorage(id);
@@ -281,10 +306,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     });
 
     if (result.is_fallback) {
-      req.log.warn(
-        { reason: result.fallback_reason },
-        '[team-architect] returned fallback team',
-      );
+      req.log.warn({ reason: result.fallback_reason }, '[team-architect] returned fallback team');
     } else {
       req.log.info(
         { agents: result.agents.map((a) => a.name).join(', ') },

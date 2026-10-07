@@ -1,3 +1,6 @@
+import { parseGoalCommand } from '../goals/command-parser.js';
+import { handleGoalMessage } from '../goals/message-handler.js';
+import { pauseChannelGoals } from '../goals/service.js';
 /**
  * Message Router — 处理用户/Agent 发送的消息
  *
@@ -43,7 +46,11 @@ import { persistScribeOutput, runScribe } from '../system-agents/scribe.js';
 export interface MessageRouterDeps {
   db: Database;
   userId?: string;
-  logger: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void };
+  logger: {
+    info: (msg: string) => void;
+    warn: (msg: string) => void;
+    error: (msg: string) => void;
+  };
 }
 
 export interface RouteUserMessageInput {
@@ -53,6 +60,7 @@ export interface RouteUserMessageInput {
   threadId?: string;
   /** 同时创建任务 */
   asTask?: boolean;
+  clientRequestId?: string;
 }
 
 /**
@@ -67,6 +75,14 @@ export async function routeUserMessage(
   const senderId = deps.userId ?? LOCAL_USER_ID;
 
   if (!content.trim()) return;
+  if (input.clientRequestId && parseGoalCommand(content)) {
+    const request = db
+      .prepare(
+        'SELECT goal_id FROM goal_requests WHERE channel_id=? AND user_id=? AND client_request_id=?',
+      )
+      .get(channelId, senderId, input.clientRequestId) as { goal_id: string } | undefined;
+    if (request) return;
+  }
 
   // 1. 解析 @mention（用户消息允许 @all 展开为全员）
   const mentions = parseMentions(content);
@@ -85,7 +101,7 @@ export async function routeUserMessage(
       // @all 等别名 agent_id=null（不绑到具体 agent；前端可特殊渲染）
       agent_id: isEveryoneMention(m.name)
         ? null
-        : mentionsInChannel.find((a) => a.name === m.name)?.id ?? null,
+        : (mentionsInChannel.find((a) => a.name === m.name)?.id ?? null),
     })),
     chain_depth: 0,
   };
@@ -100,6 +116,13 @@ export async function routeUserMessage(
 
   // Sprint 2 CP4：先广播用户消息再做 command/workflow 处理，确保 UI 顺序对齐
   hub.broadcast(channelId, { type: 'message', message: userMsg });
+
+  try {
+    if (handleGoalMessage(db, userMsg, senderId, input.clientRequestId)) return;
+  } catch (e) {
+    emitInfoMessage(db, channelId, threadId ?? null, `⚠ ${(e as Error).message}`);
+    return;
+  }
 
   // 2a. 命令分发（/command）
   const cmd = parseCommand(content);
@@ -175,10 +198,7 @@ export async function routeUserMessage(
 
   // @all 展开后豁免 MAX_MENTIONS_PER_MESSAGE 截断（用户显式意图，并发由队列保护）；
   // 否则按原规则截断防滥用。
-  if (
-    !resolved.expandedFromEveryone &&
-    mentionsInChannel.length > MAX_MENTIONS_PER_MESSAGE
-  ) {
+  if (!resolved.expandedFromEveryone && mentionsInChannel.length > MAX_MENTIONS_PER_MESSAGE) {
     logger.warn(
       `[router] message has ${mentionsInChannel.length} mentions, truncating to ${MAX_MENTIONS_PER_MESSAGE}`,
     );
@@ -197,6 +217,7 @@ export async function routeUserMessage(
   const replyParentId: string | undefined = threadId;
 
   for (const agent of mentionsInChannel) {
+    pauseChannelGoals(db, channelId, agent.id, 'interrupted_by_chat');
     const stopped = abortAgentRunsInChannel(
       db,
       agent.id,
@@ -252,9 +273,9 @@ export function enqueueAgentRunJob(
   // 策略：静默忽略（不 emit warning message），让 LLM 的"礼貌 @mention"不再污染聊天
   if (ctx.parentMessageId) {
     const thread = messageRepo.listThread(db, ctx.parentMessageId);
-    const recentAgentMsgs = thread.slice(-MAX_AGENT_CONSECUTIVE_TRIGGERS * 2).filter(
-      (m) => m.sender_type === 'agent' && m.sender_id === agent.id,
-    );
+    const recentAgentMsgs = thread
+      .slice(-MAX_AGENT_CONSECUTIVE_TRIGGERS * 2)
+      .filter((m) => m.sender_type === 'agent' && m.sender_id === agent.id);
     if (recentAgentMsgs.length >= MAX_AGENT_CONSECUTIVE_TRIGGERS) {
       logger.warn(
         `[router] skipping ${agent.name}: already triggered ${recentAgentMsgs.length}x in this thread (likely a politeness loop)`,
@@ -322,8 +343,7 @@ export async function enqueueChainedAgentRuns(
   // Thread 升级策略：
   //   - 如果当前已在 thread 内 (ctx.parentMessageId !== undefined) → 保持同 thread
   //   - 否则（主线直接回复，链式触发要进 thread）→ 把 agent 的主线消息作为 thread 根
-  const nextParentId =
-    ctx.parentMessageId ?? result.agentReplyMessage.id;
+  const nextParentId = ctx.parentMessageId ?? result.agentReplyMessage.id;
 
   for (const next of nextTargets.slice(0, MAX_MENTIONS_PER_MESSAGE)) {
     enqueueAgentRunJob(
@@ -444,16 +464,11 @@ async function handleControlCommand(input: {
   // /sediment 手动触发 Scribe（仅 thread 内有意义；CP3）
   if (cmd.name === '/sediment') {
     if (!threadId) {
-      emitInfoMessage(
-        db,
-        channelId,
-        null,
-        'ℹ /sediment only works inside a thread.',
-      );
+      emitInfoMessage(db, channelId, null, 'ℹ /sediment only works inside a thread.');
       return true;
     }
-    void manualSediment({ db, channelId, threadId, reason: cmd.args || undefined }).catch(
-      (e) => logger.error(`[router] /sediment failed: ${(e as Error).message}`),
+    void manualSediment({ db, channelId, threadId, reason: cmd.args || undefined }).catch((e) =>
+      logger.error(`[router] /sediment failed: ${(e as Error).message}`),
     );
     emitInfoMessage(
       db,
@@ -504,12 +519,7 @@ async function handleControlCommand(input: {
     try {
       const res = await overrideWorkflowRun(db, run.id, cmd.args || undefined, logger);
       if (!res.ok) {
-        emitInfoMessage(
-          db,
-          channelId,
-          threadId,
-          `ℹ /override: ${res.reason ?? 'not allowed'}`,
-        );
+        emitInfoMessage(db, channelId, threadId, `ℹ /override: ${res.reason ?? 'not allowed'}`);
       }
     } catch (e) {
       logger.error(`[router] override failed: ${(e as Error).message}`);

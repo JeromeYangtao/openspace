@@ -537,7 +537,15 @@ class CodexAppServerClient {
       };
       if (options.signal) {
         if (options.signal.aborted) {
-          onAbort();
+          turn.aborted = true;
+          this.resolveActiveTurn({
+            exitCode: null,
+            fullText: '',
+            events: [],
+            duration_ms: 0,
+            timedOut: false,
+            aborted: true,
+          });
           return;
         }
         options.signal.addEventListener('abort', onAbort, { once: true });
@@ -589,6 +597,17 @@ class CodexAppServerClient {
         },
       });
 
+      if (turn.aborted) {
+        this.resolveActiveTurn({
+          exitCode: null,
+          fullText: '',
+          events: [],
+          duration_ms: 0,
+          timedOut: false,
+          aborted: true,
+        });
+        return;
+      }
       const started = await this.request('turn/start', {
         threadId,
         input: [{ type: 'text', text: promptWithContext(params), text_elements: [] }],
@@ -602,6 +621,10 @@ class CodexAppServerClient {
       });
       const startedId = (started as { turn?: { id?: string } })?.turn?.id;
       if (!turn.turnId && startedId) turn.turnId = startedId;
+      if (turn.aborted && turn.turnId) {
+        turn.interrupting = false;
+        this.abortActiveTurn();
+      }
     } catch (e) {
       turn.emit({
         type: 'error',
@@ -1043,6 +1066,7 @@ class CodexAppServerClient {
       reason,
       policyAmendment,
       decide: (decision) => {
+        turn.emit({ type: 'approval.resolved', call_id: approval.id });
         turn.pendingApprovalIds.delete(approval.id);
         turn.serverRequests.delete(requestId);
         const result = decisionFor(kind, decision, requestParams);
@@ -1424,6 +1448,11 @@ function getAppServerClient(params: BuildCommandParams): CodexAppServerClient {
   });
   appServerClients.set(key, client);
   return client;
+}
+
+export function disposeCodexAppServers(): void {
+  for (const client of appServerClients.values()) client.dispose();
+  appServerClients.clear();
 }
 
 export function snapshotCodexAppServers(): {

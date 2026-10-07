@@ -1,3 +1,7 @@
+import { join } from 'node:path';
+import { acquireGoalProcessLock } from './goals/process-lock.js';
+import { stopAllGoals } from './goals/scheduler.js';
+import { goalRoutes } from './routes/goals.js';
 /**
  * OpenSpace Server 入口（MVP-3 + MVP-4）
  *
@@ -52,7 +56,10 @@ import { hub } from './ws/hub.js';
 import { concurrencyQueue } from './agents/queue.js';
 import { recoverInterruptedAgentRuns, snapshotRunManager } from './agents/run-manager.js';
 import { snapshotRunWorker, startRunWorker, stopRunWorker } from './agents/run-worker.js';
-import { snapshotCodexAppServers } from './agents/codex/codex-app-server-adapter.js';
+import {
+  snapshotCodexAppServers,
+  disposeCodexAppServers,
+} from './agents/codex/codex-app-server-adapter.js';
 import {
   startCodexRuntimeMonitor,
   stopCodexRuntimeMonitor,
@@ -63,6 +70,7 @@ import { registerStaticDocs } from './static-docs.js';
 import { registerStaticWeb } from './static-web.js';
 
 async function main() {
+  const releaseGoalLock = acquireGoalProcessLock(join(config.openspaceHome, 'goal-scheduler.lock'));
   const app = Fastify({
     logger: { level: config.logLevel },
   });
@@ -173,6 +181,7 @@ async function main() {
   await agentApprovalRoutes(app);
   await agentRoutes(app);
   await taskRoutes(app);
+  await goalRoutes(app);
   await workflowRoutes(app);
   await intelligenceRoutes(app);
   await feedbackRoutes(app);
@@ -205,10 +214,16 @@ async function main() {
     app.log.info(`  REST:      http://${config.host}:${config.port}/api/health`);
     app.log.info(`  WebSocket: ws://${config.host}:${config.port}/ws`);
 
-    const onShutdown = () => {
+    let shuttingDown = false;
+    const onShutdown = async () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
       app.log.info('shutting down...');
       stopCodexRuntimeMonitor();
       stopRunWorker();
+      await stopAllGoals();
+      disposeCodexAppServers();
+      releaseGoalLock();
       closeAuthDb();
       closeAllDbs();
       app.close().then(() => process.exit(0));

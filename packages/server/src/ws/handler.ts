@@ -103,7 +103,10 @@ async function handleClientEvent(
         });
         return;
       }
-      hub.subscribe(socket, event.channel_id);
+      hub.subscribe(socket, event.channel_id, () => {
+        const fresh = dbForResource('channels', event.channel_id);
+        return !!fresh && canAccessChannel(fresh.db, event.channel_id, user);
+      });
       send({ type: 'subscribed', channel_id: event.channel_id });
       return;
     }
@@ -136,6 +139,7 @@ async function handleClientEvent(
           content: event.content,
           threadId: event.thread_id,
           asTask: event.as_task,
+          clientRequestId: event.client_request_id,
         },
         {
           db: ctx.db,

@@ -5,14 +5,11 @@
  * running 标记 failed，避免 UI 假死。真正分布式 lease 可以之后再加。
  */
 
+import { claimGoalIteration, runGoalIteration } from '../goals/scheduler.js';
+import { pinProjectDb } from '../db/index.js';
 import type { Database } from 'better-sqlite3';
 import { MAX_CONCURRENT_PROCESSES } from '@openspace/shared';
-import {
-  agentRepo,
-  agentRunJobRepo,
-  messageRepo,
-  type AgentRunJob,
-} from '../db/repos.js';
+import { agentRepo, agentRunJobRepo, messageRepo, type AgentRunJob } from '../db/repos.js';
 import { listOpenDbs } from '../db/index.js';
 import { triggerAgent } from './engine.js';
 import { enqueueChainedAgentRuns } from '../messaging/router.js';
@@ -73,10 +70,26 @@ function recoverInterruptedJobs(options: { logger: WorkerLogger }): void {
 }
 
 async function tick(options: { logger: WorkerLogger }): Promise<void> {
-  while (active < MAX_CONCURRENT_PROCESSES) {
+  while (started && active < MAX_CONCURRENT_PROCESSES) {
+    const goal = claimGoalIteration();
+    if (goal) {
+      active += 1;
+      void runGoalIteration(goal, {
+        info: (m) => options.logger.info(m),
+        warn: (m) => options.logger.warn(m),
+        error: (m) => options.logger.error(m),
+      })
+        .catch((e) => options.logger.error({ err: e }, '[goal-worker]'))
+        .finally(() => {
+          active -= 1;
+          void tick(options);
+        });
+      continue;
+    }
     const claimed = claimNextJob();
     if (!claimed) return;
     active += 1;
+    const unpin = pinProjectDb(claimed.db);
     void runJob(claimed.db, claimed.job, options)
       .catch((e) => {
         options.logger.error({ err: e, job_id: claimed.job.id }, '[run-worker] job crashed');
@@ -87,6 +100,7 @@ async function tick(options: { logger: WorkerLogger }): Promise<void> {
         }
       })
       .finally(() => {
+        unpin();
         active -= 1;
         void tick(options);
       });

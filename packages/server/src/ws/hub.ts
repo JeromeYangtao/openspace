@@ -14,8 +14,14 @@ class WSHub {
   private channelSubs = new Map<string, Set<WebSocket>>();
   private socketSubs = new WeakMap<WebSocket, Set<string>>();
   private socketCount = 0;
+  private accessChecks = new WeakMap<WebSocket, Map<string, () => boolean>>();
 
-  subscribe(socket: WebSocket, channelId: string): void {
+  subscribe(socket: WebSocket, channelId: string, canAccess?: () => boolean): void {
+    if (canAccess) {
+      const checks = this.accessChecks.get(socket) ?? new Map();
+      checks.set(channelId, canAccess);
+      this.accessChecks.set(socket, checks);
+    }
     let subs = this.channelSubs.get(channelId);
     if (!subs) {
       subs = new Set();
@@ -62,6 +68,16 @@ class WSHub {
     if (!subs || subs.size === 0) return;
     const payload = JSON.stringify(event);
     for (const s of subs) {
+      const check = this.accessChecks.get(s)?.get(channelId);
+      try {
+        if (check && !check()) {
+          this.unsubscribe(s, channelId);
+          continue;
+        }
+      } catch {
+        this.unsubscribe(s, channelId);
+        continue;
+      }
       if (s.readyState === 1 /* OPEN */) {
         try {
           s.send(payload);

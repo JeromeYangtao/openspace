@@ -1,3 +1,4 @@
+import { pauseChannelGoals } from '../goals/service.js';
 import type { FastifyInstance } from 'fastify';
 import type { ChannelStatus } from '@openspace/shared';
 import { channelRepo, agentRepo, messageRepo, userChannelRepo } from '../db/repos.js';
@@ -335,6 +336,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       reply.code(403);
       return { error: 'forbidden' };
     }
+    pauseChannelGoals(ctx.db, id);
     const killed = abortChannelAgentRuns(ctx.db, id);
     return { stopped: killed };
   });

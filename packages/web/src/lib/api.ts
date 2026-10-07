@@ -4,6 +4,8 @@
 
 import type {
   Agent,
+  Goal,
+  GoalAction,
   AgentInputRequest,
   AgentInputResponse,
   AgentActivity,
@@ -638,3 +640,56 @@ export const answerAgentInput = (id: string, response: AgentInputResponse) =>
     method: 'POST',
     body: JSON.stringify(response),
   });
+
+export const listGoals = (projectId: string, channelId: string) =>
+  request<{ enabled: boolean; can_manage: boolean; goals: Goal[] }>(
+    `/api/projects/${projectId}/channels/${channelId}/goals`,
+  );
+export const createGoal = (
+  projectId: string,
+  channelId: string,
+  input: {
+    objective: string;
+    agent_id: string;
+    thread_id?: string;
+    acceptance_criteria?: string[];
+    max_rounds?: number;
+    max_active_ms?: number;
+    client_request_id: string;
+  },
+) =>
+  request<Goal>(`/api/projects/${projectId}/channels/${channelId}/goals`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+export const goalAction = (
+  projectId: string,
+  id: string,
+  input: {
+    action: GoalAction;
+    content?: string;
+    expected_version: number;
+    client_request_id: string;
+    max_rounds?: number;
+    max_active_ms?: number;
+  },
+) =>
+  request<Goal>(`/api/projects/${projectId}/goals/${id}/actions`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+export interface GoalDetails {
+  goal: Goal;
+  iterations: Array<{
+    id: string;
+    sequence: number;
+    kind: string;
+    status: string;
+    active_ms: number;
+    error: string | null;
+    report_json: string | null;
+  }>;
+  events: Array<{ id: number; type: string; actor_id: string | null; created_at: number }>;
+}
+export const getGoal = (projectId: string, id: string) =>
+  request<GoalDetails>(`/api/projects/${projectId}/goals/${id}`);

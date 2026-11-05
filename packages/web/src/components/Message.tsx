@@ -514,7 +514,7 @@ function ApprovalRequestRow({
           title={
             supported === false
               ? 'Codex exec mode cannot receive approval decisions yet'
-              : 'Allow this Codex action'
+              : 'Allow this action'
           }
           className={cn(
             'px-2 py-1 border-2 border-black rounded bg-bg-card text-[10px] font-bold',
@@ -532,7 +532,7 @@ function ApprovalRequestRow({
           title={
             supported === false
               ? 'Codex exec mode cannot receive approval decisions yet'
-              : 'Allow similar Codex requests for this session'
+              : 'Allow similar requests for this session'
           }
           className={cn(
             'px-2 py-1 border-2 border-black rounded bg-bg-card text-[10px] font-bold',
@@ -551,7 +551,7 @@ function ApprovalRequestRow({
             title={
               supported === false
                 ? 'Codex exec mode cannot receive approval decisions yet'
-                : 'Allow similar Codex requests persistently by adding the proposed policy rule'
+                : 'Allow similar requests persistently by adding the proposed policy rule'
             }
             className={cn(
               'px-2 py-1 border-2 border-black rounded bg-bg-card text-[10px] font-bold',

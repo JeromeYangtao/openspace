@@ -13,6 +13,7 @@
  * （需要异步 healthcheck，超出本次范围；见 docs/cursorsdkadapter.md §S-1）。
  */
 
+import { ClaudeAdapter } from './claude/claude-adapter.js';
 import { CursorAdapter } from './cursor/cursor-adapter.js';
 import { CursorSdkAdapter } from './cursor/cursor-sdk-adapter.js';
 import { CodexAppServerAdapter } from './codex/codex-app-server-adapter.js';
@@ -32,6 +33,7 @@ export function createCodexAdapter(): CLIAdapter {
 export function createAdapterForRuntime(runtime: Runtime): CLIAdapter | null {
   if (runtime === 'cursor') return createCursorAdapter();
   if (runtime === 'codex') return createCodexAdapter();
+  if (runtime === 'claude') return new ClaudeAdapter();
   return null;
 }
 
@@ -59,6 +61,10 @@ export interface SystemAdapterPick {
 
 export async function createSystemAdapter(): Promise<SystemAdapterPick> {
   const configured = (process.env.OPENSPACE_SYSTEM_RUNTIME ?? '').toLowerCase();
+  if (configured === 'claude') {
+    const adapter = new ClaudeAdapter();
+    return { adapter, install: await adapter.checkInstallation() };
+  }
   if (configured === 'cursor') {
     const adapter = createCursorAdapter();
     return { adapter, install: await adapter.checkInstallation() };
@@ -80,9 +86,14 @@ export async function createSystemAdapter(): Promise<SystemAdapterPick> {
     return { adapter: codex, install: codexInstall };
   }
 
+  if (process.env.ANTHROPIC_API_KEY) {
+    const adapter = new ClaudeAdapter();
+    const install = await adapter.checkInstallation();
+    if (install.installed) return { adapter, install };
+  }
   return { adapter: cursor, install: cursorInstall, noRuntimeAvailable: true };
 }
 
 export function runtimeForAdapter(adapter: CLIAdapter): Runtime {
-  return adapter.name === 'codex' ? 'codex' : 'cursor';
+  return adapter.name === 'claude' ? 'claude' : adapter.name === 'codex' ? 'codex' : 'cursor';
 }

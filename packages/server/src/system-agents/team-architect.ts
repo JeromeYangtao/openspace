@@ -111,7 +111,11 @@ function buildTeamArchitectPrompt(input: SuggestTeamInput, defaultRuntime: Runti
     : '';
 
   const modelCatalog =
-    defaultRuntime === 'codex'
+    defaultRuntime === 'claude'
+      ? ['Use runtime="claude" for every agent.',
+          'Models: sonnet (implementation), opus (architecture/review), haiku (lightweight).',
+          'Use reasoning low, medium, or high. Set thinking and context to null.']
+      : defaultRuntime === 'codex'
       ? [
           '## Model catalog (Codex CLI model IDs)',
           '',
@@ -222,7 +226,7 @@ function buildTeamArchitectPrompt(input: SuggestTeamInput, defaultRuntime: Runti
     '      "role": "architect",                    // REQUIRED: one of "architect"/"implementer"/"reviewer"/"qa"/"scribe"',
     '      "description": "...",                   // 1-3 sentences, written as the agent\'s system prompt in second person',
     `      "runtime": "${defaultRuntime}",                    // use "${defaultRuntime}" for this local setup`,
-    `      "model": "${defaultRuntime === 'codex' ? 'gpt-5.5' : 'claude-opus-4-7'}",             // pick from the catalog above`,
+    `      "model": "${defaultModel(defaultRuntime, 'architect')}",             // pick from the catalog above`,
     '      "reasoning": "high",                    // low / medium / high / extra-high / max',
     '      "thinking": true,                       // true / false / null (null = model default)',
     '      "context": "1m"                         // "300k" / "1m" / null (null = model default)',
@@ -299,7 +303,7 @@ function parseTeamSuggestion(raw: string, defaultRuntime: Runtime): Omit<TeamSug
     // Sprint 4-ext / Phase A：thinking / context 接受多种 LLM 输出变体
     // Codex CLI 不支持 thinking / context 字段，强制为 null 与 fallback 三件套保持一致。
     const thinking = runtimeNormalized === 'codex' ? null : parseThinking(a.thinking);
-    const context = runtimeNormalized === 'codex' ? null : parseContext(a.context);
+    const context = runtimeNormalized !== 'cursor' ? null : parseContext(a.context);
 
     agents.push({
       name,
@@ -484,6 +488,7 @@ function fallbackAgents(runtime: Runtime): TeamSuggestionAgent[] {
 }
 
 function defaultModel(runtime: Runtime, role: 'architect' | 'dev' | 'reviewer'): string {
+  if (runtime === 'claude') return role === 'dev' ? 'sonnet' : 'opus';
   if (runtime === 'codex') {
     return role === 'dev' ? 'gpt-5.3-codex' : 'gpt-5.5';
   }

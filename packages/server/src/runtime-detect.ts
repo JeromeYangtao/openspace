@@ -4,6 +4,7 @@
  * MVP 只有 Cursor 会被实际 spawn；其他 runtime 即使检测到也不可用（返回给前端显示 "coming soon"）。
  */
 
+import { ClaudeAdapter } from './agents/claude/claude-adapter.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { Runtime } from '@openspace/shared';
@@ -40,6 +41,7 @@ export async function detectRuntime(runtime: Runtime): Promise<RuntimeDetectResu
 }
 
 async function doDetect(runtime: Runtime): Promise<RuntimeDetectResult> {
+  if (runtime === 'claude') return new ClaudeAdapter().checkInstallation();
   const cmd = RUNTIME_COMMANDS[runtime];
   try {
     const { stdout: pathOut } = await execFileAsync('which', [cmd], { timeout: 3000 });

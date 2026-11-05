@@ -235,7 +235,7 @@ export async function triggerAgent(
         envVars: agent.env_vars,
         permissive: true,
         resumeSessionId:
-          agent.runtime === 'codex'
+          agent.runtime === 'codex' || agent.runtime === 'claude'
             ? ctx.goal
               ? ((
                   db
@@ -291,7 +291,10 @@ export async function triggerAgent(
               ? { ...event, text: event.type === 'text.delta' ? '' : visibleGoalText(event.text) }
               : toAgentActivityPayload(event),
           );
-          if (event.type === 'session.started' && agent.runtime === 'codex') {
+          if (
+            event.type === 'session.started' &&
+            (agent.runtime === 'codex' || agent.runtime === 'claude')
+          ) {
             if (ctx.goal)
               db.prepare(
                 'INSERT INTO goal_runtime_sessions(goal_id,session_id) VALUES(?,?) ON CONFLICT(goal_id) DO UPDATE SET session_id=excluded.session_id',

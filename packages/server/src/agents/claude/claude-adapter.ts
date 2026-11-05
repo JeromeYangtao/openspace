@@ -224,10 +224,8 @@ export class ClaudeAdapter implements CLIAdapter {
       if (options.signal?.aborted) onAbort();
       if (controller.signal.aborted) return result();
       const env = { ...process.env, ...params.envVars };
-      if (!env.ANTHROPIC_API_KEY)
-        throw new Error(
-          'Set ANTHROPIC_API_KEY in the server environment or this agent’s environment variables',
-        );
+      // Let Claude Code resolve credentials, including the current user's CLI login.
+      // Preserve HOME / CLAUDE_CONFIG_DIR and never require or copy credentials here.
       const queryFn = this.queryFactory ?? (await import('@anthropic-ai/claude-agent-sdk')).query;
       const effort = params.reasoning === 'extra-high' ? 'xhigh' : params.reasoning;
       const sdkOptions: Options = {
@@ -240,7 +238,7 @@ export class ClaudeAdapter implements CLIAdapter {
         permissionMode: 'default',
         canUseTool,
         systemPrompt: { type: 'preset', preset: 'claude_code' },
-        settingSources: ['project'],
+        settingSources: ['user', 'project', 'local'],
         stderr: (line) => {
           resetTimer();
           options.onStderr?.(line);

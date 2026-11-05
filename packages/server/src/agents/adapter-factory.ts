@@ -44,8 +44,8 @@ export function createAdapterForRuntime(runtime: Runtime): CLIAdapter | null {
  * `adapter.checkInstallation()`。这避免了 SDK 模式下每个 system agent 都
  * 再发一次 `Cursor.me()` 网络调用。
  *
- * Review B-4：当 cursor 与 codex 都不可用时，`noRuntimeAvailable=true` 让
- * 调用方明确知晓"两个 runtime 都没装"，可以记录 warn 日志而不是无声跳过。
+ * Review B-4：当所有 runtime 都不可用时，`noRuntimeAvailable=true` 让
+ * 调用方明确知晓"所有 runtime 都不可用"，可以记录 warn 日志而不是无声跳过。
  */
 export interface SystemAdapterPick {
   adapter: CLIAdapter;
@@ -55,7 +55,7 @@ export interface SystemAdapterPick {
     path?: string;
     error?: string;
   };
-  /** cursor 与 codex 都未安装且未通过 OPENSPACE_SYSTEM_RUNTIME 显式指定时为 true */
+  /** 所有 runtime 都不可用且未通过 OPENSPACE_SYSTEM_RUNTIME 显式指定时为 true */
   noRuntimeAvailable?: boolean;
 }
 
@@ -86,11 +86,9 @@ export async function createSystemAdapter(): Promise<SystemAdapterPick> {
     return { adapter: codex, install: codexInstall };
   }
 
-  if (process.env.ANTHROPIC_API_KEY) {
-    const adapter = new ClaudeAdapter();
-    const install = await adapter.checkInstallation();
-    if (install.installed) return { adapter, install };
-  }
+  const claude = new ClaudeAdapter();
+  const claudeInstall = await claude.checkInstallation();
+  if (claudeInstall.installed) return { adapter: claude, install: claudeInstall };
   return { adapter: cursor, install: cursorInstall, noRuntimeAvailable: true };
 }
 

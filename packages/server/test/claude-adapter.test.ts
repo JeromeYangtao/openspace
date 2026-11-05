@@ -10,7 +10,8 @@ import { listPendingApprovals, resolveApproval } from '../src/agents/approval-ma
 import { listPendingInputs, resolveInput } from '../src/agents/input-manager.js';
 import type { CLIEvent } from '../src/agents/types.js';
 
-const params = { prompt: 'hello', envVars: { ANTHROPIC_API_KEY: 'test-only-not-a-real-key' } };
+// An empty override also makes these tests independent of a developer's API key.
+const params = { prompt: 'hello', envVars: { ANTHROPIC_API_KEY: '' } };
 const message = (value: unknown) => value as SDKMessage;
 const success = () =>
   message({
@@ -248,4 +249,29 @@ test('SDK errors are reported; interactive calls in background runs are denied',
   const result = await adapter.runDirect(params);
   assert.equal(result.exitCode, 1);
   assert.ok(result.events.some((e) => e.type === 'error' && e.message === 'authentication failed'));
+});
+
+test('uses local Claude login without an API key and preserves credential lookup environment', async () => {
+  let called = false;
+  const adapter = new ClaudeAdapter(
+    fakeQuery(async function* (options) {
+      called = true;
+      assert.equal(options.env?.ANTHROPIC_API_KEY, '');
+      assert.equal(options.env?.HOME, process.env.HOME);
+      assert.equal(options.env?.CLAUDE_CONFIG_DIR, '/tmp/openspace-test-claude-config');
+      assert.deepEqual(options.settingSources, ['user', 'project', 'local']);
+      assert.equal(options.extraArgs?.bare, undefined);
+      yield success();
+    }),
+  );
+  const result = await adapter.runDirect({
+    ...params,
+    envVars: {
+      ...params.envVars,
+      CLAUDE_CONFIG_DIR: '/tmp/openspace-test-claude-config',
+    },
+  });
+  assert.ok(called);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.fullText, 'Done');
 });

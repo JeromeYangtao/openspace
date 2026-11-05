@@ -47,7 +47,7 @@ OPENSPACE_PNPM_VERSION=10
 - 至少一个本地 coding runtime 已安装并登录：
   - **Codex CLI** (`codex`)
   - **[Cursor CLI](https://cursor.sh)** (`cursor-agent`)，或在 Settings 中配置 Cursor SDK API key 改走 SDK 旁路
-  - **Claude Agent SDK**（安装依赖时自带执行文件），配置 `ANTHROPIC_API_KEY` 后使用
+  - **Claude Agent SDK**（安装依赖时自带执行文件），复用运行服务的本机用户已有的 Claude 登录状态
   - 其他 runtime（Kimi / Copilot / Gemini）在 UI 中标为 "coming soon"
 
 ### 本地启动
@@ -241,14 +241,14 @@ Goal 在专属线程里执行，未完成自动继续，完成候选经过单独
 ### Claude Agent（第一版）
 
 1. 运行 `pnpm install`，保留 optional dependencies（SDK 自带平台对应的 Claude 执行文件）。
-2. 在服务进程环境中设置 `ANTHROPIC_API_KEY` 并重启服务；也可以在创建 Agent 的 Environment Variables 中为单个 Agent 配置。不要把密钥提交到代码库。
+2. 使用运行 OpenSpace 服务的同一个系统用户登录 `claude`，然后重启 OpenSpace。服务需要使用同一用户的 HOME 和 Claude 配置目录；无需配置 API Key。
 3. 创建 Agent，选择 **Claude Agent**，默认模型为 `claude-opus-5-5`（Opus 5.5）；也可选择 `sonnet`、`opus` 或 `haiku` 别名。具体可用性由账号决定。
 4. 在频道中 @Agent。工具权限和用户提问使用已有审批/输入卡片，停止按钮会取消运行并清理待处理请求。
 
 支持流式文本、思考、工具调用结果，以及按项目、Agent、频道隔离的持久会话。只发送本次消息，恢复时不重复注入历史。会话记录由 SDK 保存在本机，OpenSpace 数据库保存会话 ID；删除 SDK 的会话文件会导致恢复失败并显示错误。
 
-采用 SDK `default` 权限模式，保留 Claude Code 默认系统提示词并加载项目 `.claude/settings.json` / `CLAUDE.md`。工具按 Claude 的权限规则执行，需要人工确认的操作转交 OpenSpace；“Allow for session”仅把 SDK 建议规则用于当前运行进程，不写项目权限文件，下一轮仍可能再次询问。后台系统 Agent 没有交互界面时拒绝需要人工确认的操作。可设置 `OPENSPACE_SYSTEM_RUNTIME=claude`，同时给服务配置 API Key。
+采用 SDK `default` 权限模式，保留 Claude Code 默认系统提示词并加载与本机 CLI 一致的 user、project、local 配置（包括 `CLAUDE.md`）。工具按 Claude 的权限规则执行，需要人工确认的操作转交 OpenSpace；“Allow for session”仅把 SDK 建议规则用于当前运行进程，不写项目权限文件，下一轮仍可能再次询问。后台系统 Agent 没有交互界面时拒绝需要人工确认的操作。可设置 `OPENSPACE_SYSTEM_RUNTIME=claude`，同样复用本机登录。
 
-第一版要求 API Key，不自动复用 claude.ai 订阅登录。上下文窗口使用模型默认值，暂不支持 OpenSpace 手动压缩和上下文用量面板。模型调用需要联网；SDK 版本锁定在 server 的 package.json 和 pnpm-lock.yaml。
+认证由 Claude Code 自行处理，默认复用本机登录；未登录或凭证过期时显示运行时返回的错误。上下文窗口使用模型默认值，暂不支持 OpenSpace 手动压缩和上下文用量面板。模型调用需要联网；SDK 版本锁定在 server 的 package.json 和 pnpm-lock.yaml。
 
 新建 Agent、自动组队及未显式指定模型的运行：Codex 默认 `gpt-6.1-sol`（GPT 6.1 Sol），Claude 默认 `claude-opus-5-5`（Opus 5.5）。已有 Agent 显式保存的模型不自动修改。

@@ -1,3 +1,4 @@
+import { DEFAULT_RUNTIME_MODELS } from '@openspace/shared';
 import type {
   CanUseTool,
   Options,
@@ -51,7 +52,7 @@ export class ClaudeAdapter implements CLIAdapter {
     return [];
   }
   async getSupportedModels() {
-    return ['sonnet', 'opus', 'haiku'];
+    return [DEFAULT_RUNTIME_MODELS.claude!, 'sonnet', 'opus', 'haiku'];
   }
 
   async runDirect(params: BuildCommandParams, options: RunnerOptions = {}): Promise<RunnerResult> {
@@ -232,7 +233,7 @@ export class ClaudeAdapter implements CLIAdapter {
       const sdkOptions: Options = {
         cwd: params.workingDirectory,
         env,
-        model: params.model || undefined,
+        model: params.model?.trim() || DEFAULT_RUNTIME_MODELS.claude,
         resume: params.resumeSessionId || undefined,
         abortController: controller,
         includePartialMessages: true,

@@ -1,3 +1,4 @@
+import { DEFAULT_RUNTIME_MODELS } from '@openspace/shared';
 import { registerInput, resolveInput, forgetInput, getPendingInput } from '../input-manager.js';
 import type { AgentInputQuestion } from '@openspace/shared';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
@@ -41,7 +42,13 @@ const MODEL_ALIASES: Record<string, string> = {
   'gpt-5-codex': 'gpt-5.1-codex-max',
 };
 
-const FALLBACK_MODELS = ['gpt-5.1-codex-max', 'gpt-5-codex', 'gpt-5.1', 'gpt-5'];
+const FALLBACK_MODELS = [
+  DEFAULT_RUNTIME_MODELS.codex!,
+  'gpt-5.1-codex-max',
+  'gpt-5-codex',
+  'gpt-5.1',
+  'gpt-5',
+];
 
 const REASONING_ALIASES: Record<string, string> = {
   none: 'none',
@@ -56,7 +63,7 @@ const REASONING_ALIASES: Record<string, string> = {
 
 function normalizeModel(raw?: string | null): string | null {
   const value = raw?.trim();
-  if (!value) return null;
+  if (!value) return DEFAULT_RUNTIME_MODELS.codex!;
   return MODEL_ALIASES[value] ?? value;
 }
 
@@ -1548,7 +1555,9 @@ export class CodexAppServerAdapter implements CLIAdapter {
         catalog.models
           ?.filter((m) => m.visibility === 'list' && typeof m.slug === 'string' && m.slug)
           .map((m) => m.slug as string) ?? [];
-      return models.length > 0 ? models : FALLBACK_MODELS;
+      return models.length > 0
+        ? [...new Set([DEFAULT_RUNTIME_MODELS.codex!, ...models])]
+        : FALLBACK_MODELS;
     } catch {
       return FALLBACK_MODELS;
     }

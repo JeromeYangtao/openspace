@@ -1,3 +1,4 @@
+import { DEFAULT_RUNTIME_MODELS } from '@openspace/shared';
 /**
  * Repository 层 — 封装各表的 CRUD。
  *
@@ -277,6 +278,7 @@ export const agentRepo = {
     },
   ): Agent {
     const id = input.id ?? nanoid();
+    const model = input.model?.trim() || DEFAULT_RUNTIME_MODELS[input.runtime] || null;
     const ts = now();
     const thinkingInt =
       input.thinking === undefined || input.thinking === null ? null : input.thinking ? 1 : 0;
@@ -290,7 +292,7 @@ export const agentRepo = {
       input.avatar ?? null,
       input.description ?? null,
       input.runtime,
-      input.model ?? null,
+      model,
       input.reasoning ?? null,
       thinkingInt,
       input.context ?? null,
@@ -304,7 +306,7 @@ export const agentRepo = {
       avatar: input.avatar ?? null,
       description: input.description ?? null,
       runtime: input.runtime,
-      model: input.model ?? null,
+      model,
       reasoning: input.reasoning ?? null,
       thinking: input.thinking ?? null,
       context: input.context ?? null,

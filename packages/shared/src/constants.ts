@@ -73,6 +73,12 @@ export const DEFAULT_PORT_SERVER = 4179;
 // =============================================================================
 export type Runtime = 'cursor' | 'codex' | 'claude' | 'kimi' | 'copilot' | 'gemini';
 
+/** Defaults for new agents and runs with no explicit model selection. */
+export const DEFAULT_RUNTIME_MODELS: Partial<Record<Runtime, string>> = {
+  codex: 'gpt-6.1-sol',
+  claude: 'claude-opus-5-5',
+};
+
 export interface RuntimeMeta {
   id: Runtime;
   label: string;

@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from 'react';
 import type { ReasoningEffort, Runtime, RuntimeDetection } from '@openspace/shared';
-import { REASONING_EFFORTS } from '@openspace/shared';
+import { DEFAULT_RUNTIME_MODELS, REASONING_EFFORTS } from '@openspace/shared';
 import { cn } from '../lib/cn';
 import { notifyChannelAgentsChanged } from '../lib/channel-agent-events';
 import { createAgent, createUser, getRuntimeModels, getRuntimes, joinChannel } from '../lib/api';
@@ -85,23 +85,35 @@ export function CreateAgentDialog({ open, onClose, autoJoinChannelId, projectId 
       setModels([]);
       return;
     }
+    let cancelled = false;
     setLoadingModels(true);
+    setModel('');
     getRuntimeModels(runtime)
       .then((res) => {
+        if (cancelled) return;
         setModels(res.models);
-        // 选中第一个作为默认（优先"composer-2-fast"、否则第一个）
+        // Prefer the runtime default; retain Cursor’s existing preference.
         if (res.models.length > 0) {
-          const preferred = res.models.find((m) => m === 'composer-2-fast') ?? res.models[0]!;
+          const preferred =
+            res.models.find((m) => m === DEFAULT_RUNTIME_MODELS[runtime]) ??
+            res.models.find((m) => m === 'composer-2-fast') ??
+            res.models[0]!;
           setModel(preferred);
         } else {
           setModel('');
         }
       })
       .catch(() => {
+        if (cancelled) return;
         setModels([]);
         setModel('');
       })
-      .finally(() => setLoadingModels(false));
+      .finally(() => {
+        if (!cancelled) setLoadingModels(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [runtime]);
 
   const canSubmitAgent = Boolean(name.trim() && runtime);

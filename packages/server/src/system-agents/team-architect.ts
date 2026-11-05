@@ -11,7 +11,7 @@
  *   - 返回内容非 JSON / 解析失败 / 字段缺失
  */
 
-import { TEAM_ARCHITECT_TIMEOUT_MS } from '@openspace/shared';
+import { DEFAULT_RUNTIME_MODELS, TEAM_ARCHITECT_TIMEOUT_MS } from '@openspace/shared';
 import type { ReasoningEffort, Runtime, TeamSuggestion, TeamSuggestionAgent } from '@openspace/shared';
 import { createSystemAdapter, runtimeForAdapter } from '../agents/adapter-factory.js';
 import { runWithAdapter } from '../agents/runner.js';
@@ -111,28 +111,11 @@ function buildTeamArchitectPrompt(input: SuggestTeamInput, defaultRuntime: Runti
     : '';
 
   const modelCatalog =
-    defaultRuntime === 'claude'
-      ? ['Use runtime="claude" for every agent.',
-          'Models: sonnet (implementation), opus (architecture/review), haiku (lightweight).',
-          'Use reasoning low, medium, or high. Set thinking and context to null.']
-      : defaultRuntime === 'codex'
+    defaultRuntime === 'claude' || defaultRuntime === 'codex'
       ? [
-          '## Model catalog (Codex CLI model IDs)',
-          '',
-          'Use runtime="codex" for every agent.',
-          '',
-          '- "gpt-5.5" — strongest general reasoning; preferred for Architect / Reviewer.',
-          '- "gpt-5.4" — strong everyday coding and balanced implementation.',
-          '- "gpt-5.4-mini" — fast lightweight work.',
-          '- "gpt-5.3-codex" — coding-optimized model for implementation and refactors.',
-          '- "gpt-5.3-codex-spark" — fast coding model for small changes.',
-          '- "gpt-5.2" — professional work fallback.',
-          '',
-          'Selection guidelines:',
-          '- Architect / Lead Reviewer → gpt-5.5; reasoning="high" or "extra-high"',
-          '- Developer / Refactorer → gpt-5.3-codex or gpt-5.4; reasoning="medium"',
-          '- Lightweight assistant → gpt-5.4-mini or gpt-5.3-codex-spark; reasoning="low"',
-          '- Codex CLI ignores thinking/context fields; set them to null.',
+          `Use runtime="${defaultRuntime}" for every agent.`,
+          `Use model="${DEFAULT_RUNTIME_MODELS[defaultRuntime]}" for every role unless the user explicitly requests another model.`,
+          'Use reasoning low, medium, or high. Set thinking and context to null.',
         ]
       : [
           '## Model catalog (Cursor SDK approved IDs only)',
@@ -488,9 +471,6 @@ function fallbackAgents(runtime: Runtime): TeamSuggestionAgent[] {
 }
 
 function defaultModel(runtime: Runtime, role: 'architect' | 'dev' | 'reviewer'): string {
-  if (runtime === 'claude') return role === 'dev' ? 'sonnet' : 'opus';
-  if (runtime === 'codex') {
-    return role === 'dev' ? 'gpt-5.3-codex' : 'gpt-5.5';
-  }
+  if (DEFAULT_RUNTIME_MODELS[runtime]) return DEFAULT_RUNTIME_MODELS[runtime]!;
   return role === 'dev' ? 'claude-sonnet-4-6' : 'claude-opus-4-7';
 }

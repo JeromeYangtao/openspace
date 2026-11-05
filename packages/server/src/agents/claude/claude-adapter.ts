@@ -235,7 +235,8 @@ export class ClaudeAdapter implements CLIAdapter {
         resume: params.resumeSessionId || undefined,
         abortController: controller,
         includePartialMessages: true,
-        permissionMode: 'default',
+        // Let Claude Code classify actions; unresolved requests still use our cards.
+        permissionMode: 'auto',
         canUseTool,
         systemPrompt: { type: 'preset', preset: 'claude_code' },
         settingSources: ['user', 'project', 'local'],
@@ -316,13 +317,30 @@ export class ClaudeEventMapper {
   private messageId = '';
   private tools = new Map<string, string>();
   constructor(private readonly emit: (event: CLIEvent) => void) {}
+  private emitPermissionMode(mode: string): void {
+    this.emit({
+      type: 'progress.updated',
+      source: 'claude',
+      summary:
+        mode === 'auto'
+          ? 'Claude automatic permission review is active'
+          : `Claude permission mode: ${mode}`,
+      detail:
+        mode === 'default'
+          ? 'Requests requiring approval will use OpenSpace approval cards.'
+          : undefined,
+    });
+  }
   accept(msg: SDKMessage): void {
     if (msg.type === 'system' && msg.subtype === 'init') {
       this.emit({
         type: 'session.started',
         session_id: msg.session_id,
-        meta: { model: msg.model },
+        meta: { model: msg.model, permissionMode: msg.permissionMode },
       });
+      if (msg.permissionMode) this.emitPermissionMode(msg.permissionMode);
+    } else if (msg.type === 'system' && msg.subtype === 'status' && msg.permissionMode) {
+      this.emitPermissionMode(msg.permissionMode);
     } else if (msg.type === 'stream_event' && !msg.parent_tool_use_id) {
       const event = msg.event;
       if (event.type === 'message_start') this.messageId = event.message.id;

@@ -95,7 +95,8 @@ test('passes explicit session, cwd, model and permissions; final text replaces p
         assert.equal(options.resume, 'session-A');
         assert.equal(options.cwd, '/tmp');
         assert.equal(options.model, 'sonnet');
-        assert.equal(options.permissionMode, 'default');
+        assert.equal(options.permissionMode, 'auto');
+        assert.equal(options.permissionPrompts, undefined);
         assert.equal(options.effort, 'xhigh');
         assert.equal(options.continue, undefined);
         assert.equal(options.allowDangerouslySkipPermissions, undefined);
@@ -274,4 +275,26 @@ test('uses local Claude login without an API key and preserves credential lookup
   assert.ok(called);
   assert.equal(result.exitCode, 0);
   assert.equal(result.fullText, 'Done');
+});
+
+test('reports actual permission mode when Claude falls back from auto to manual', () => {
+  const events: CLIEvent[] = [];
+  const mapper = new ClaudeEventMapper((event) => events.push(event));
+  mapper.accept(
+    message({
+      type: 'system',
+      subtype: 'init',
+      session_id: 'session',
+      model: 'opus',
+      permissionMode: 'auto',
+    }),
+  );
+  mapper.accept(
+    message({ type: 'system', subtype: 'status', status: null, permissionMode: 'default' }),
+  );
+  const progress = events.filter((event) => event.type === 'progress.updated');
+  assert.equal(progress.length, 2);
+  assert.match(progress[0]!.summary, /automatic permission review/);
+  assert.match(progress[1]!.summary, /default/);
+  assert.match(progress[1]!.detail!, /approval cards/);
 });

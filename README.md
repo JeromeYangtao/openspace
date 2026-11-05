@@ -247,7 +247,7 @@ Goal 在专属线程里执行，未完成自动继续，完成候选经过单独
 
 支持流式文本、思考、工具调用结果，以及按项目、Agent、频道隔离的持久会话。只发送本次消息，恢复时不重复注入历史。会话记录由 SDK 保存在本机，OpenSpace 数据库保存会话 ID；删除 SDK 的会话文件会导致恢复失败并显示错误。
 
-采用 SDK `default` 权限模式，保留 Claude Code 默认系统提示词并加载与本机 CLI 一致的 user、project、local 配置（包括 `CLAUDE.md`）。工具按 Claude 的权限规则执行，需要人工确认的操作转交 OpenSpace；“Allow for session”仅把 SDK 建议规则用于当前运行进程，不写项目权限文件，下一轮仍可能再次询问。后台系统 Agent 没有交互界面时拒绝需要人工确认的操作。可设置 `OPENSPACE_SYSTEM_RUNTIME=claude`，同样复用本机登录。
+采用 SDK `auto` 权限模式，由 Claude Code 的分类模型自动审核命令、网络请求等操作；显式 ask 规则、用户提问和仍需人工确认的请求使用 OpenSpace 卡片。若账号、模型或组织设置导致 auto 不可用，运行时可回退至 default，并在活动流显示实际权限模式。保留 Claude Code 默认系统提示词并加载与本机 CLI 一致的 user、project、local 配置（包括 `CLAUDE.md`）。工具继续遵循 Claude 的权限规则；“Allow for session”仅把 SDK 建议规则用于当前运行进程，不写项目权限文件，下一轮仍可能再次询问。后台系统 Agent 没有交互界面时拒绝需要人工确认的操作。可设置 `OPENSPACE_SYSTEM_RUNTIME=claude`，同样复用本机登录。
 
 认证由 Claude Code 自行处理，默认复用本机登录；未登录或凭证过期时显示运行时返回的错误。上下文窗口使用模型默认值，暂不支持 OpenSpace 手动压缩和上下文用量面板。模型调用需要联网；SDK 版本锁定在 server 的 package.json 和 pnpm-lock.yaml。
 

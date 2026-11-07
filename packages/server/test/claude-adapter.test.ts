@@ -298,3 +298,135 @@ test('reports actual permission mode when Claude falls back from auto to manual'
   assert.match(progress[1]!.summary, /default/);
   assert.match(progress[1]!.detail!, /approval cards/);
 });
+
+// ----- Background tasks: the run must outlive the first result -----
+const init = () => message({ type: 'system', subtype: 'init', session_id: 'S', model: 'opus' });
+const tasksChanged = (tasks: Array<{ id: string; description: string; ambient?: boolean }>) =>
+  message({
+    type: 'system',
+    subtype: 'background_tasks_changed',
+    tasks: tasks.map((t) => ({
+      task_id: t.id,
+      task_type: 'local_bash',
+      description: t.description,
+      ambient: t.ambient,
+    })),
+  });
+const turnResult = (text: string, input = 2, output = 1) =>
+  message({
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    result: text,
+    duration_ms: 5,
+    usage: { input_tokens: input, output_tokens: output, cache_read_input_tokens: 1 },
+  });
+const untilAborted = (options: Options) =>
+  new Promise<void>((resolve) =>
+    options.abortController!.signal.addEventListener('abort', () => resolve(), { once: true }),
+  );
+
+test('background task notification wakes a follow-up turn before the run completes', async () => {
+  const order: string[] = [];
+  const adapter = new ClaudeAdapter(
+    fakeQuery(
+      async function* () {
+        yield init();
+        yield tasksChanged([{ id: 'b1', description: 'Wait for markout run' }]);
+        yield message({
+          type: 'system',
+          subtype: 'task_started',
+          task_id: 'b1',
+          description: 'Wait for markout run',
+          is_backgrounded: true,
+          task_type: 'local_bash',
+        });
+        yield turnResult('started');
+        order.push('first result consumed');
+        await new Promise((r) => setTimeout(r, 30));
+        yield message({
+          type: 'system',
+          subtype: 'task_notification',
+          task_id: 'b1',
+          status: 'completed',
+          output_file: '/tmp/b1.output',
+          summary: 'Background command "Wait for markout run" completed',
+        });
+        yield tasksChanged([]);
+        yield init();
+        yield turnResult('finished: 42', 3, 2);
+        order.push('second result consumed');
+      },
+      () => order.push('closed'),
+    ),
+    { resultSettleMs: 1000, backgroundWaitMs: 1000 },
+  );
+  const events: CLIEvent[] = [];
+  const result = await adapter.runDirect(params, { onEvent: (e) => events.push(e), timeoutMs: 10 });
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.timedOut, false);
+  assert.equal(result.fullText, 'started\n\nfinished: 42');
+  assert.deepEqual(order, ['first result consumed', 'second result consumed', 'closed']);
+  assert.equal(events.filter((e) => e.type === 'session.started').length, 1);
+  const completed = events.filter((e) => e.type === 'session.completed');
+  assert.equal(completed.length, 1);
+  assert.deepEqual(completed[0]!.type === 'session.completed' && completed[0]!.usage, {
+    input_tokens: 5,
+    output_tokens: 3,
+    cached_input_tokens: 2,
+  });
+  const progress = events.flatMap((e) => (e.type === 'progress.updated' ? [e.summary] : []));
+  assert.ok(progress.includes('Background task started: Wait for markout run'));
+  assert.ok(progress.includes('Waiting for 1 background task(s)'));
+  assert.ok(progress.some((s) => s.startsWith('Background task completed:')));
+  assert.ok(!events.some((e) => e.type === 'error'));
+});
+
+test('background wait times out without failing the delivered reply', async () => {
+  const adapter = new ClaudeAdapter(
+    fakeQuery(async function* (options) {
+      yield init();
+      yield tasksChanged([{ id: 'b1', description: 'Long job' }]);
+      yield turnResult('started');
+      await untilAborted(options);
+    }),
+    { backgroundWaitMs: 20, resultSettleMs: 1000 },
+  );
+  const result = await adapter.runDirect(params, { timeoutMs: 1000 });
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.timedOut, false);
+  assert.equal(result.fullText, 'started');
+  const error = result.events.find((e) => e.type === 'error');
+  assert.ok(error && error.type === 'error' && error.code === 'background_timeout');
+  assert.equal(error.type === 'error' && error.fatal, false);
+  assert.match(error.type === 'error' ? error.message : '', /Long job/);
+});
+
+test('a stream left open after a final result is closed after the settle period', async () => {
+  let closed = false;
+  const adapter = new ClaudeAdapter(
+    fakeQuery(
+      async function* (options) {
+        yield init();
+        // Ambient watchers never hold the run open.
+        yield tasksChanged([{ id: 'w1', description: 'watcher', ambient: true }]);
+        yield turnResult('Done');
+        await untilAborted(options);
+      },
+      () => {
+        closed = true;
+      },
+    ),
+    { resultSettleMs: 20, backgroundWaitMs: 5000 },
+  );
+  const started = Date.now();
+  const result = await adapter.runDirect(params, { timeoutMs: 5000 });
+  assert.ok(Date.now() - started < 1000);
+  assert.ok(closed);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.timedOut, false);
+  assert.equal(result.aborted, false);
+  assert.equal(result.fullText, 'Done');
+  assert.ok(!result.events.some((e) => e.type === 'error'));
+  assert.equal(result.events.filter((e) => e.type === 'session.completed').length, 1);
+});

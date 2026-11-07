@@ -18,6 +18,10 @@ export const CHARS_PER_TOKEN = 4;
 // =============================================================================
 export const MAX_CONCURRENT_PROCESSES = 3;
 export const PROCESS_IDLE_TIMEOUT_MS = 600_000; // 10 分钟无输出/事件才超时
+/** Claude 一轮结束后仍有后台任务（run_in_background 的 Bash、后台子 agent 等）时，最多等多久它们的通知 */
+export const CLAUDE_BACKGROUND_WAIT_TIMEOUT_MS = 3 * 60 * 60_000;
+/** Claude 一轮结束且没有后台任务时，等 SDK 自行结束 stream 的宽限时间，超时后主动关闭 */
+export const CLAUDE_RESULT_SETTLE_MS = 15_000;
 export const QUEUE_MAX_SIZE = 20;
 
 // =============================================================================

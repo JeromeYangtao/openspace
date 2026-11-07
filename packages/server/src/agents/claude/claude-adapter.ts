@@ -6,7 +6,12 @@ import type {
   SDKMessage,
   query,
 } from '@anthropic-ai/claude-agent-sdk';
-import { PROCESS_IDLE_TIMEOUT_MS, type AgentInputResponse } from '@openspace/shared';
+import {
+  CLAUDE_BACKGROUND_WAIT_TIMEOUT_MS,
+  CLAUDE_RESULT_SETTLE_MS,
+  PROCESS_IDLE_TIMEOUT_MS,
+  type AgentInputResponse,
+} from '@openspace/shared';
 import { registerApproval, forgetApproval } from '../approval-manager.js';
 import { registerInput, forgetInput } from '../input-manager.js';
 import type {
@@ -20,6 +25,19 @@ import type {
 
 // Injectable transport keeps protocol tests independent of credentials and paid model calls.
 export type ClaudeQuery = typeof query;
+export interface ClaudeAdapterTimings {
+  /** Max quiet time after a turn while background tasks are still running. */
+  backgroundWaitMs?: number;
+  /** Grace period for the SDK to end the stream after a turn with no background work. */
+  resultSettleMs?: number;
+}
+/**
+ * After a `result`, Claude Code keeps the one-shot stream open while background work
+ * (run_in_background Bash, background subagents) is live, then runs a follow-up turn for
+ * each task_notification. Closing on the first result kills that work and loses the
+ * follow-up, so a run only ends when the stream ends or one of these phases times out.
+ */
+type RunPhase = 'turn' | 'background' | 'settling';
 export class ClaudeAdapter implements CLIAdapter {
   readonly name = 'claude';
   readonly capabilities = {
@@ -31,7 +49,10 @@ export class ClaudeAdapter implements CLIAdapter {
     supportsReasoningEffort: true,
     supportsStdinContext: true,
   };
-  constructor(private readonly queryFactory?: ClaudeQuery) {}
+  constructor(
+    private readonly queryFactory?: ClaudeQuery,
+    private readonly timings: ClaudeAdapterTimings = {},
+  ) {}
 
   async checkInstallation() {
     try {
@@ -63,6 +84,8 @@ export class ClaudeAdapter implements CLIAdapter {
     let timedOut = false;
     let aborted = false;
     let receivedResult = false;
+    let backgroundTimedOut = false;
+    let phase: RunPhase = 'turn';
     const controller = new AbortController();
     let stream: ReturnType<ClaudeQuery> | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -81,7 +104,16 @@ export class ClaudeAdapter implements CLIAdapter {
     };
     const resetTimer = () => {
       clearTimeout(timer);
-      if (!waiting && !controller.signal.aborted)
+      if (waiting || controller.signal.aborted) return;
+      if (phase === 'settling')
+        // The turn is complete; this only reclaims a stream the SDK failed to end.
+        timer = setTimeout(stop, this.timings.resultSettleMs ?? CLAUDE_RESULT_SETTLE_MS);
+      else if (phase === 'background')
+        timer = setTimeout(() => {
+          backgroundTimedOut = true;
+          stop();
+        }, this.timings.backgroundWaitMs ?? CLAUDE_BACKGROUND_WAIT_TIMEOUT_MS);
+      else
         timer = setTimeout(() => {
           timedOut = true;
           stop();
@@ -122,6 +154,7 @@ export class ClaudeAdapter implements CLIAdapter {
         if (done) cleanup(); // onEvent may synchronously resolve the card.
       });
     };
+    const mapper = new ClaudeEventMapper(emit);
     const deny: PermissionResult = { behavior: 'deny', message: 'Request cancelled or declined' };
     const canUseTool: CanUseTool = async (tool, input, context) => {
       // Background system agents have no interactive event consumer.
@@ -262,15 +295,25 @@ export class ClaudeAdapter implements CLIAdapter {
         prompt: [params.stdinContext, params.prompt].filter(Boolean).join('\n\n'),
         options: sdkOptions,
       });
-      const mapper = new ClaudeEventMapper(emit);
       for await (const message of stream) {
-        resetTimer();
+        // A new turn (e.g. woken by a background task notification) starts with init.
+        if (message.type === 'system' && message.subtype === 'init') phase = 'turn';
         mapper.accept(message);
         if (message.type === 'result') {
           receivedResult = true;
           exitCode = message.subtype === 'success' && !message.is_error ? 0 : 1;
-          break;
+          if (exitCode !== 0) break;
+          phase = mapper.hasLiveBackgroundTasks ? 'background' : 'settling';
+        } else if (
+          phase === 'background' &&
+          message.type === 'system' &&
+          message.subtype === 'background_tasks_changed' &&
+          !mapper.hasLiveBackgroundTasks
+        ) {
+          // Last task settled; its follow-up turn should begin right away.
+          phase = 'settling';
         }
+        resetTimer();
       }
       if (!receivedResult && !controller.signal.aborted)
         throw new Error('Claude exited without a result');
@@ -289,6 +332,16 @@ export class ClaudeAdapter implements CLIAdapter {
       controller.abort();
       for (const cancel of [...pending]) cancel();
       stream?.close();
+      if (receivedResult && exitCode === 0 && !timedOut && !aborted) mapper.complete();
+      if (backgroundTimedOut)
+        emit({
+          type: 'error',
+          code: 'background_timeout',
+          message: `Claude background tasks were stopped after ${Math.round(
+            (this.timings.backgroundWaitMs ?? CLAUDE_BACKGROUND_WAIT_TIMEOUT_MS) / 60_000,
+          )} minutes without activity: ${mapper.liveBackgroundTaskDescriptions.join('; ')}`,
+          fatal: false,
+        });
       if (timedOut || aborted)
         emit({
           type: 'error',
@@ -316,7 +369,31 @@ export class ClaudeEventMapper {
   private streamed = new Set<string>();
   private messageId = '';
   private tools = new Map<string, string>();
+  private sessionId = '';
+  /** Live background tasks, excluding ambient watchers that need not finish. */
+  private backgroundTasks = new Map<string, string>();
+  /** Final text of every completed turn; follow-up turns append instead of replacing. */
+  private completedText = '';
+  private durationMs = 0;
+  private usage = { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0 };
+  private turns = 0;
   constructor(private readonly emit: (event: CLIEvent) => void) {}
+  get hasLiveBackgroundTasks(): boolean {
+    return this.backgroundTasks.size > 0;
+  }
+  get liveBackgroundTaskDescriptions(): string[] {
+    return [...this.backgroundTasks.values()];
+  }
+  /** Emits the run-level completion once no further turn can follow. */
+  complete(): void {
+    if (!this.turns) return;
+    this.turns = 0;
+    this.emit({
+      type: 'session.completed',
+      duration_ms: this.durationMs,
+      usage: { ...this.usage },
+    });
+  }
   private emitPermissionMode(mode: string): void {
     this.emit({
       type: 'progress.updated',
@@ -333,6 +410,9 @@ export class ClaudeEventMapper {
   }
   accept(msg: SDKMessage): void {
     if (msg.type === 'system' && msg.subtype === 'init') {
+      // Follow-up turns re-send init for the same session; it is not a new session.
+      if (msg.session_id === this.sessionId) return;
+      this.sessionId = msg.session_id;
       this.emit({
         type: 'session.started',
         session_id: msg.session_id,
@@ -341,6 +421,28 @@ export class ClaudeEventMapper {
       if (msg.permissionMode) this.emitPermissionMode(msg.permissionMode);
     } else if (msg.type === 'system' && msg.subtype === 'status' && msg.permissionMode) {
       this.emitPermissionMode(msg.permissionMode);
+    } else if (msg.type === 'system' && msg.subtype === 'background_tasks_changed') {
+      // Level signal with replace semantics; never pair task_started/notification edges.
+      this.backgroundTasks = new Map(
+        msg.tasks.filter((task) => !task.ambient).map((task) => [task.task_id, task.description]),
+      );
+    } else if (msg.type === 'system' && msg.subtype === 'task_started') {
+      if (msg.is_backgrounded && !msg.skip_transcript)
+        this.emit({
+          type: 'progress.updated',
+          source: 'claude',
+          summary: `Background task started: ${msg.description}`,
+          item_id: msg.task_id,
+        });
+    } else if (msg.type === 'system' && msg.subtype === 'task_notification') {
+      if (!msg.skip_transcript)
+        this.emit({
+          type: 'progress.updated',
+          source: 'claude',
+          summary: `Background task ${msg.status}: ${msg.summary}`,
+          detail: msg.output_file || undefined,
+          item_id: msg.task_id,
+        });
     } else if (msg.type === 'stream_event' && !msg.parent_tool_use_id) {
       const event = msg.event;
       if (event.type === 'message_start') this.messageId = event.message.id;
@@ -388,16 +490,20 @@ export class ClaudeEventMapper {
         }
     } else if (msg.type === 'result') {
       if (msg.subtype === 'success' && !msg.is_error) {
-        this.emit({ type: 'text.completed', text: msg.result });
-        this.emit({
-          type: 'session.completed',
-          duration_ms: msg.duration_ms,
-          usage: {
-            input_tokens: msg.usage.input_tokens,
-            output_tokens: msg.usage.output_tokens,
-            cached_input_tokens: msg.usage.cache_read_input_tokens ?? 0,
-          },
-        });
+        this.turns++;
+        this.durationMs += msg.duration_ms;
+        this.usage.input_tokens += msg.usage.input_tokens;
+        this.usage.output_tokens += msg.usage.output_tokens;
+        this.usage.cached_input_tokens += msg.usage.cache_read_input_tokens ?? 0;
+        this.completedText = [this.completedText, msg.result].filter(Boolean).join('\n\n');
+        this.emit({ type: 'text.completed', text: this.completedText });
+        if (this.hasLiveBackgroundTasks)
+          this.emit({
+            type: 'progress.updated',
+            source: 'claude',
+            summary: `Waiting for ${this.backgroundTasks.size} background task(s)`,
+            detail: this.liveBackgroundTaskDescriptions.join('\n'),
+          });
       } else
         this.emit({
           type: 'error',
